@@ -6,11 +6,14 @@ CONSOLE_COLORS = {
     "UNDERLINE": "\033[4m",
     "HIGHLIGHT": "\033[7m",
     "INVISIBLE": "\033[8m",
-    "CROSSED": "\033[9m",
-    "WARNING": "\033[41m",
-    "SUCCESS": "\033[42m",
-    "ALERT": "\033[43m",
-    "INFO": "\033[44m",
+    "CROSSED_OUT": "\033[9m",
+    "WARNING": "\033[41m\033[1m",
+    "SUCCESS": "\033[42m\033[1m",
+    "ALERT": "\033[43m\033[1m",
+    "INFO": "\033[44m\033[1m",
+}
+
+CONSOLE_USER_COLORS = {
     "GREY": "\033[90m",
     "RED": "\033[91m",
     "GREEN": "\033[92m",
