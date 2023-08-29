@@ -1,3 +1,4 @@
+from firebase_functions import readAllFromCollection
 from functions import tryMode, trySide
 from gui import GuiApp
 from headless import HeadlessApp
@@ -11,14 +12,16 @@ from headless import HeadlessApp
 # t2.join()
 # t1.join()
 
-if __name__ == "__main__":
-    mode = tryMode()
-    side = trySide()
+# if __name__ == "__main__":
+#     mode = tryMode()
+#     side = trySide()
 
-    if mode == "headless":
-        headlessApp = HeadlessApp(side)
-        headlessApp.run()
+#     if mode == "headless":
+#         headlessApp = HeadlessApp(side)
+#         headlessApp.run()
 
-    else:
-        guiApp = GuiApp(side)
-        guiApp.run()
+#     else:
+#         guiApp = GuiApp(side)
+#         guiApp.run()
+
+print(readAllFromCollection("users"))
