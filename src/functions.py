@@ -1,11 +1,5 @@
 import re
 import sys
-import threading
-import time
-
-from colors import CONSOLE_COLORS
-
-hasDatabaseReadServers = threading.Event()
 
 
 def tryMode() -> str:
@@ -67,30 +61,3 @@ def isValidIp(userInput: str) -> bool:
                 return False
         return True
     return False
-
-
-def readActiveServersFromDatabase():
-    print("reading database")
-    time.sleep(3)
-    print("database finished")
-    hasDatabaseReadServers.set()
-
-
-def printTextWhileWaiting(text: str):
-    phrases = [
-        f"{text}",
-        f"{text}.",
-        f"{text}..",
-        f"{text}...",
-    ]
-
-    while True:
-        for phrase in phrases:
-            if hasDatabaseReadServers.is_set():
-                return
-
-            print(
-                f"{CONSOLE_COLORS['ALERT']}{phrase}{CONSOLE_COLORS['RESET']}", end="\r"
-            )
-            time.sleep(0.5)
-        print(" " * len(phrases[-1]), end="\r")

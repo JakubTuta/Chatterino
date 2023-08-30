@@ -1,8 +1,19 @@
+import os
+import sys
+import threading
+import time
 from typing import Union
 
 from google.cloud import firestore
 
-from firebase_init import gc
+from src.colors import CONSOLE_COLORS
+
+from .firebase_init import gc
+
+mainDirectory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(mainDirectory)
+
+hasDatabaseRead = threading.Event()
 
 collections = {
     "users": gc.collection("users"),
@@ -39,9 +50,35 @@ def readAllFromCollection(collectionName: str) -> Union[list, None]:
         print("Collection does not exist")
         return
 
+    hasDatabaseRead.clear()
+
     collection = collections[collectionName]
     docs = collection.stream()
 
     mappedDocs = [doc.to_dict() for doc in docs]
 
+    hasDatabaseRead.set()
+
     return mappedDocs
+
+
+def loading(text: str):
+    phrases = [
+        f"{text}",
+        f"{text}.",
+        f"{text}..",
+        f"{text}...",
+    ]
+
+    while True:
+        for phrase in phrases:
+            if hasDatabaseRead.is_set():
+                print(" " * len(phrases[-1]), end="\r")
+                hasDatabaseRead.clear()
+                return
+
+            print(
+                f"{CONSOLE_COLORS['ALERT']}{phrase}{CONSOLE_COLORS['RESET']}", end="\r"
+            )
+            time.sleep(0.5)
+        print(" " * len(phrases[-1]), end="\r")
