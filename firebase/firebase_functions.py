@@ -1,5 +1,3 @@
-import os
-import sys
 import threading
 import time
 from typing import Union
@@ -9,9 +7,6 @@ from google.cloud import firestore
 from src.colors import CONSOLE_COLORS
 
 from .firebase_init import gc
-
-mainDirectory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.append(mainDirectory)
 
 hasDatabaseRead = threading.Event()
 

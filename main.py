@@ -1,18 +1,20 @@
-from firebase.serverStore import fetchServers
-from src.functions import tryMode, trySide
+from firebase.usersStore import fetchUser
+from src.functions import getUserInfo, trySide
 from src.gui import GuiApp
 from src.headless import HeadlessApp
 
-# if __name__ == "__main__":
-#     mode = tryMode()
-#     side = trySide()
+if __name__ == "__main__":
+    userIp = getUserInfo()
+    userRef, userData = fetchUser(userIp)
 
-#     if mode == "headless":
-#         headlessApp = HeadlessApp(side)
-#         headlessApp.run()
+    # mode = tryMode()
+    side = trySide()
+    print()
 
-#     else:
-#         guiApp = GuiApp(side)
-#         guiApp.run()
+    mode = "headless"
 
-fetchServers()
+    if mode == "headless":
+        HeadlessApp.run(side, userData, userRef)
+
+    else:
+        GuiApp.run(side, userData, userRef)
