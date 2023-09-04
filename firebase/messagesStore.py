@@ -66,7 +66,7 @@ def printMessages(messages):
             user = userRefs[userRef.id]
 
         print(
-            f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}{user['name']}: {message['text']}{CONSOLE_COLORS['RESET']}"
+            f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
         )
 
 

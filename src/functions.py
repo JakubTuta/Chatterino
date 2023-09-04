@@ -8,8 +8,6 @@ from .colors import CONSOLE_USER_COLORS
 
 
 def tryMode() -> str:
-    # headless / gui
-
     mode = ""
 
     try:
@@ -17,18 +15,17 @@ def tryMode() -> str:
         while mode.lower() != "headless" and mode.lower() != "gui":
             mode = input("Enter correct mode [headless / gui]: ")
     except IndexError:
-        mode = input("Enter mode [headless / gui]: ")
-        while mode.lower() != "headless" and mode.lower() != "gui":
-            mode = input("Enter correct mode [headless / gui]: ")
-    except KeyboardInterrupt:
-        pass
+        try:
+            mode = input("Enter mode [headless / gui]: ")
+            while mode.lower() != "headless" and mode.lower() != "gui":
+                mode = input("Enter correct mode [headless / gui]: ")
+        except KeyboardInterrupt:
+            return "exit"
 
     return mode
 
 
 def trySide() -> str:
-    # join / host
-
     side = ""
 
     try:
@@ -36,11 +33,12 @@ def trySide() -> str:
         while side.lower() != "join" and side.lower() != "host":
             side = input("Enter correct action [join / host]: ")
     except IndexError:
-        side = input("Enter action [join / host]: ")
-        while side.lower() != "join" and side.lower() != "host":
-            side = input("Enter correct action [join / host]: ")
-    except KeyboardInterrupt:
-        pass
+        try:
+            side = input("Enter action [join / host]: ")
+            while side.lower() != "join" and side.lower() != "host":
+                side = input("Enter correct action [join / host]: ")
+        except KeyboardInterrupt:
+            return "exit"
 
     return side
 
@@ -75,17 +73,23 @@ def getUserInfo() -> str:
 
 
 def tryPassword(correctPassword: str):
-    userInput = input("Enter password:\n")
-    while userInput != correctPassword:
-        userInput = input("Incorrect password. Try again:\n")
+    try:
+        userInput = input("Enter password:\n")
+        while userInput != correctPassword:
+            userInput = input("Incorrect password. Try again:\n")
+    except KeyboardInterrupt:
+        return "exit"
 
 
 def tryServerName():
-    forbiddenWords = ["exit"]
-    data = input(f"Enter server's name:\n")
-    while data in forbiddenWords:
-        data = input(f'You can\'t use "{data}". Try again:\n')
-    return data
+    try:
+        forbiddenWords = ["exit"]
+        data = input(f"Enter server's name:\n")
+        while data in forbiddenWords:
+            data = input(f'You can\'t use "{data}". Try again:\n')
+        return data
+    except KeyboardInterrupt:
+        return "exit"
 
 
 def tryServerPassword():
@@ -97,21 +101,28 @@ def tryServerPassword():
 
 
 def tryUserName():
-    forbiddenWords = ["back", "exit"]
-    userInput = input("Enter your name in the chat:\n")
-    while userInput in forbiddenWords:
-        userInput = input(f'You can\'t use "{userInput}". Try again:\n')
-    return userInput
+    try:
+        forbiddenWords = ["back", "exit"]
+        userInput = input("Enter your name in the chat:\n")
+        while userInput in forbiddenWords:
+            userInput = input(f'You can\'t use "{userInput}". Try again:\n')
+        return userInput
+    except KeyboardInterrupt:
+        return "exit"
 
 
 def tryUserColor():
-    availableColors = CONSOLE_USER_COLORS.keys()
-    userInput = input(
-        f"Choose one of the following colors for your texts in chat:\n{', '.join(availableColors)}\n"
-    )
-    while userInput.upper() not in availableColors:
-        userInput = input(f'You can\'t use "{userInput}". Try again:\n')
-    return userInput
+    try:
+        availableColors = list(CONSOLE_USER_COLORS.keys())
+        availableColors.pop(0)
+        userInput = input(
+            f"Choose one of the following colors for your texts in chat:\n{', '.join(availableColors)}\n"
+        )
+        while userInput.upper() not in availableColors:
+            userInput = input(f'You can\'t use "{userInput}". Try again:\n')
+        return userInput
+    except KeyboardInterrupt:
+        return "exit"
 
 
 def generateRandomId():

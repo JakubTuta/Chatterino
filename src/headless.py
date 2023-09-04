@@ -36,7 +36,8 @@ class HeadlessApp:
 
         else:
             if not serverExistsInDatabase(allServers, userData["ip"]):
-                HeadlessApp.__createServer(allServers, userData["ip"])
+                if not HeadlessApp.__createServer(allServers, userData["ip"]):
+                    return
             serverRef = findServerRef(userData["ip"])
             HeadlessApp.__hostServer(userData["ip"])
             closeServer(serverRef)
@@ -61,7 +62,8 @@ class HeadlessApp:
         serverRef = findServerRef(server["ip"])
 
         if server["isPassword"]:
-            tryPassword(server["password"])
+            if tryPassword(server["password"]) == "exit":
+                return
             print("Correct password!\n")
 
         if not isUserOnServer(servers, userRef):
@@ -98,7 +100,7 @@ class HeadlessApp:
             target=HeadlessApp.__waitForUserInput, args=(mySocket, userColor)
         )
         t_readingFromServer = threading.Thread(
-            target=HeadlessApp.__readData, args=(mySocket,)
+            target=HeadlessApp.__readData, args=(mySocket, userColor)
         )
 
         t_waitingForUserInput.start()
@@ -110,19 +112,30 @@ class HeadlessApp:
             while True:
                 userInput = input(f"{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ")
                 print(f"{CONSOLE_COLORS['RESET']}", end="")
+
+                if userInput == "exit":
+                    raise KeyboardInterrupt
+
                 mySocket.send(userInput.encode())
 
         except ConnectionAbortedError:
             print("Failed to send the message. Connection to the server is broken")
             return
 
+        except KeyboardInterrupt:
+            mySocket.close()
+
     @staticmethod
-    def __readData(mySocket):
+    def __readData(mySocket, userColor):
         while True:
             try:
                 if len(mySocket.recv(1, socket.MSG_PEEK)):
                     incomingData = mySocket.recv(1024).decode()
-                    print(incomingData)
+                    print(
+                        f"\r{CONSOLE_COLORS['RESET']}{incomingData}\n{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ",
+                        end="",
+                    )
+
             except ConnectionAbortedError:
                 print(
                     "Failed to read a message from server. Connection to the server is broken"
@@ -132,9 +145,13 @@ class HeadlessApp:
     @staticmethod
     def __createServer(servers, userIp):
         serverName = tryServerName()
+        if serverName == "exit":
+            return
         while not isServerNameUnique(servers, serverName):
             print("This name already exists. Server name has to be unique!")
             serverName = tryServerName()
+            if serverName == "exit":
+                return
 
         isPassword = input(
             "Do you want your server password protected? [yes \ no]\n",
@@ -145,6 +162,8 @@ class HeadlessApp:
         password = ""
         if isPassword:
             password = tryServerPassword()
+            if password == "exit":
+                return
 
         serverData = {
             "name": serverName,
@@ -157,6 +176,7 @@ class HeadlessApp:
 
         createServer(serverData)
         print("Server created!")
+        return True
 
     @staticmethod
     def __hostServer(serverIp):
@@ -188,7 +208,10 @@ class HeadlessApp:
                 clientIp = clientAddress[0]
 
                 connectedClients.append({clientIp: clientSocket})
-                print(f"Accepted connection from client: {clientIp}")
+                print(
+                    f"\r{CONSOLE_COLORS['RESET']}Accepted connection from client: {clientIp}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
+                    end="",
+                )
 
                 t_clientHandle = threading.Thread(
                     target=HeadlessApp.__handleClients,
@@ -241,7 +264,10 @@ class HeadlessApp:
                 formattedMessage = HeadlessApp.__formatMessage(
                     incomingData, currClientData
                 )
-                print(formattedMessage)
+                print(
+                    f"\r{CONSOLE_COLORS['RESET']}{formattedMessage}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
+                    end="",
+                )
                 buffer.push(
                     {
                         "id": generateRandomId(),
@@ -260,4 +286,4 @@ class HeadlessApp:
     @staticmethod
     def __formatMessage(messageText, userData):
         serverTimestamp = datetime.now()
-        return f"{mapTimestamp(serverTimestamp)} {CONSOLE_USER_COLORS[userData['color'].upper()]}[{userData['name']}]: {messageText}{CONSOLE_COLORS['RESET']}"
+        return f"[{mapTimestamp(serverTimestamp)}] {CONSOLE_USER_COLORS[userData['color'].upper()]}[{userData['name']}]: {messageText}{CONSOLE_COLORS['RESET']}"
