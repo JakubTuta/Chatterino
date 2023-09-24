@@ -9,7 +9,7 @@ def main():
     userRef, userData = fetchUser(userIp)
 
     # mode = tryMode()
-    mode = "headless"
+    mode = "gui"
 
     if mode == "exit":
         return
