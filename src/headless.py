@@ -5,7 +5,7 @@ from datetime import datetime
 
 from google.cloud import firestore
 
-from firebase.messagesStore import fetchMessagesFromServer, mapTimestamp
+from firebase.messagesStore import fetchMessagesFromServer, mapTimestamp, printMessages
 from firebase.serverStore import (
     addUserToServer,
     closeServer,
@@ -94,7 +94,8 @@ class HeadlessApp:
             )
             return
 
-        fetchMessagesFromServer(serverRef)
+        messages = fetchMessagesFromServer(serverRef)
+        printMessages(messages)
 
         t_waitingForUserInput = threading.Thread(
             target=HeadlessApp.__waitForUserInput, args=(mySocket, userColor)

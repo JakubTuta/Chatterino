@@ -25,3 +25,14 @@ CONSOLE_USER_COLORS = {
     "CYAN": "\033[96m",
     "WHITE": "\033[97m",
 }
+
+HEX_COLORS = {
+    "GRAY": "#7F7F7F",
+    "RED": "#FF0000",
+    "GREEN": "#00FF00",
+    "BLUE": "#0000FF",
+    "YELLOW": "#FFFF00",
+    "PURPLE": "#800080",
+    "CYAN": "#00FFFF",
+    "WHITE": "#FFFFFF"
+}

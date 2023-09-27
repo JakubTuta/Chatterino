@@ -45,8 +45,6 @@ def fetchMessagesFromServer(serverRef):
     t2.join()
     t1.join()
 
-    printMessages(messages)
-
     return messages
 
 
