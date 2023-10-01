@@ -4,6 +4,8 @@ from firebase.messagesStore import fetchMessagesFromServer
 from google.cloud import firestore
 from .colors import HEX_COLORS
 import threading
+import socket
+
 
 selectedServer = None
 
@@ -14,6 +16,7 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
         self.master = master
         self.width = kwargs["width"]
         self.height = kwargs["height"]
+        self.userRefs = {}
 
     def drawServerList(self, servers):
         font = ctk.CTkFont(family="Arial", size=25)
@@ -30,15 +33,16 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
 
     def drawMessages(self, messages, myIp):
         font = ctk.CTkFont(family="Arial", size=15)
-        userRefs = {}
 
         for i, message in enumerate(messages):
             userRef = message["user"]
-            if userRef.id not in userRefs:
+            if userRef.id not in self.userRefs:
                 user = userRef.get().to_dict()
-                userRefs[userRef.id] = user
+                self.userRefs[userRef.id] = user
             else:
-                user = userRefs[userRef.id]
+                user = self.userRefs[userRef.id]
+
+            anchor = 'e' if user["ip"] == myIp else 'w'
 
             ctk.CTkLabel(
                 self,
@@ -46,8 +50,28 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
                 font=font,
                 fg_color=(HEX_COLORS[user["color"].upper()]),
                 corner_radius=15,
-                justify="left"
-            ).pack(pady=10, padx=10, ipady=10, ipadx=20, side="bottom")
+                justify="left",
+                wraplength=self.width - 200
+            ).pack(padx=5, pady=5, ipadx=15, ipady=5, anchor=anchor)
+
+    def drawMessage(self, message, userRef):
+        font = ctk.CTkFont(family="Arial", size=15)
+
+        if userRef.id not in self.userRefs:
+            user = userRef.get().to_dict()
+            self.userRefs[userRef.id] = user
+        else:
+            user = self.userRefs[userRef.id]
+
+        ctk.CTkLabel(
+            self,
+            text=message,
+            font=font,
+            fg_color=(HEX_COLORS[user["color"].upper()]),
+            corner_radius=15,
+            justify="left",
+            wraplength=self.width - 200
+        ).pack(padx=5, pady=5, ipadx=15, ipady=5, anchor='e')
 
     def __handleChooseServerButtonClick(self, server):
         if server["isPassword"]:
@@ -68,7 +92,7 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
                 return True
 
             if not data:
-                return False
+                exit(1)
 
 
 class Window(ctk.CTk):
@@ -93,10 +117,10 @@ class GuiApp:
             pass
 
         elif side == "join":
-            GuiApp.createServersWindow(activeServers, userData)
+            GuiApp.createServersWindow(activeServers, userData, userRef)
 
     @staticmethod
-    def createServersWindow(servers, userData):
+    def createServersWindow(servers, userData, userRef):
         app = Window(width=GuiApp.windowWidth, height=GuiApp.windowHeight)
 
         frame = ScrollableFrame(
@@ -109,18 +133,52 @@ class GuiApp:
 
         app.mainloop()
 
-        GuiApp.createMessagesWindow(userData)
+        if selectedServer:
+            GuiApp.__joinServer(userData, userRef)
 
     @staticmethod
-    def createMessagesWindow(userData):
-        font = ctk.CTkFont(family="Arial", size=15)
+    def __joinServer(userData, userRef):
+        mySocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        mySocket.settimeout(5)
+
+        maxTries = 5
+        retryInterval = 2
+
+        # for attempt in range(maxTries):
+        #     try:
+        #         mySocket.connect((selectedServer["ip"], 2137))
+        #     except:
+        #         print(
+        #             f"Attempt {attempt + 1}/{maxTries}: Connection refused. Retrying in {retryInterval} seconds..."
+        #         )
+        #         time.sleep(retryInterval)
+        #     else:
+        #         break
+        # else:
+        #     print(
+        #         f"Failed to connect to server after {maxTries} attempts. Maybe the server is down?"
+        #     )
+        #     return
+
+        mySocket.settimeout(None)
+
+        GuiApp.createMessagesWindow(userData, mySocket, userRef)
+
+    @staticmethod
+    def createMessagesWindow(userData, mySocket, userRef):
+        def __handleButtonPress(event=None):
+            GuiApp.__handleOutput(frame, mySocket, entry.get(), userRef)
+            entry.delete(0, ctk.END)
 
         app = Window(width=GuiApp.windowWidth, height=GuiApp.windowHeight)
+        app.bind('<Return>', __handleButtonPress)
+
+        font = ctk.CTkFont(family="Arial", size=15)
 
         frame = ScrollableFrame(
             master=app,
             width=GuiApp.windowWidth * .9,
-            height=GuiApp.windowHeight * .8,
+            height=GuiApp.windowHeight * .9,
         )
         frame.pack()
 
@@ -128,28 +186,33 @@ class GuiApp:
             master=app,
             placeholder_text="Enter message...",
             width=int(GuiApp.windowWidth * .9),
-            height=int(GuiApp.windowHeight * .2),
+            height=int(GuiApp.windowHeight * .1),
             font=font
         )
         entry.pack()
 
         serverRef = findServerRef(selectedServer["ip"])
         messages = fetchMessagesFromServer(serverRef)
-
         frame.drawMessages(messages, userData["ip"])
 
-        t_messageInput = threading.Thread(target=GuiApp.__handleInput)
-        t_messageInput.start()
-
-        t_messageOutput = threading.Thread(target=GuiApp.__handleOutput)
-        t_messageOutput.start()
+        t_messageInput = threading.Thread(target=GuiApp.__handleInput, args=(frame, mySocket))
+        # t_messageInput.start()
 
         app.mainloop()
 
     @staticmethod
-    def __handleInput():
-        pass
-    
+    def __handleInput(window, mySocket):
+        while True:
+            try:
+                if len(mySocket.recv(1, socket.MSG_PEEK)):
+                    incomingData = mySocket.recv(1024).decode()
+                    window.drawMessages()
+
+            except ConnectionAbortedError:
+                print("Failed to read a message from server. Connection to the server is broken")
+                return
+
     @staticmethod
-    def __handleOutput():
-        pass
+    def __handleOutput(window, mySocket, message, userRef):
+        # mySocket.send(message.encode())
+        window.drawMessage(message, userRef)
