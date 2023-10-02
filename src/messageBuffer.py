@@ -1,5 +1,6 @@
 import queue
 import threading
+import time
 
 from firebase.messagesStore import createMessage
 
@@ -19,3 +20,4 @@ class MessageBuffer:
             if not self.q.empty():
                 item = self.q.get()
                 createMessage(item)
+            time.sleep(1)

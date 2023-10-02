@@ -1,11 +1,13 @@
 import customtkinter as ctk
-from firebase.serverStore import fetchServers, findServerRef
+from firebase.serverStore import fetchServers, findServerRef, serverExistsInDatabase, closeServer, isServerNameUnique, \
+    createServer, openServer
 from firebase.messagesStore import fetchMessagesFromServer
+from firebase.usersStore import findUser
 from google.cloud import firestore
 from .colors import HEX_COLORS
 import threading
 import socket
-
+from .messageBuffer import MessageBuffer
 
 selectedServer = None
 
@@ -114,7 +116,12 @@ class GuiApp:
         activeServers = [server for server in allServers if server["isActive"]]
 
         if side == "host":
-            pass
+            if not serverExistsInDatabase(allServers, userData["ip"]):
+                if not GuiApp.__createServer(allServers, userData["ip"]):
+                    return
+            serverRef = findServerRef(userData["ip"])
+            GuiApp.__hostServer(userData["ip"])
+            closeServer(serverRef)
 
         elif side == "join":
             GuiApp.createServersWindow(activeServers, userData, userRef)
@@ -216,3 +223,81 @@ class GuiApp:
     def __handleOutput(window, mySocket, message, userRef):
         # mySocket.send(message.encode())
         window.drawMessage(message, userRef)
+
+    @staticmethod
+    def __createServer(servers, myIp):
+        nameDialog = ctk.CTkInputDialog(text="Enter server's name:", title="Server's name")
+        name = nameDialog.get_input()
+
+        if not name or name == "":
+            return False
+
+        while not isServerNameUnique(servers, name):
+            nameDialog = ctk.CTkInputDialog(text="(Name already exists. Choose another one)\nEnter server's name:",
+                                            title="Server's name")
+            name = nameDialog.get_input()
+
+            if not name or name == "":
+                return False
+
+        passwordDialog = ctk.CTkInputDialog(text="Enter server's password\nLeave empty if you want no password",
+                                            title="Server's password")
+        password = passwordDialog.get_input()
+
+        if not password:
+            isPassword = False
+            password = ""
+        else:
+            isPassword = True
+
+        serverData = {
+            "name": name,
+            "ip": myIp,
+            "isPassword": isPassword,
+            "password": password,
+            "isActive": True,
+            "users": []
+        }
+
+        createServer(serverData)
+        return True
+
+    @staticmethod
+    def __hostServer(serverIp):
+        print("Creating server socket")
+
+        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        serverSocket.bind((serverIp, 2137))
+        serverSocket.listen(5)
+
+        print("Server socket is created")
+
+        serverRef = findServerRef(serverIp)
+        openServer(serverRef)
+
+        print("Waiting for users")
+
+        connectedClients = []
+        buffer = MessageBuffer()
+
+        try:
+            while True:
+                clientSocket, clientAddress = serverSocket.accept()
+                clientIp = clientAddress[0]
+
+                connectedClients.append({clientIp: clientSocket})
+
+                t_clientHandle = threading.Thread(target=GuiApp.handleClients, args=(connectedClients, [clientIp, clientSocket], serverRef, buffer))
+                t_clientHandle.start()
+
+        except:
+            return
+
+    @staticmethod
+    def __handleClients(connectedClients, currClient, serverRef, buffer):
+        currClientIp, currClientSocket = currClient
+        currClientRef = findUser(currClientIp)
+        currClientData = currClientRef.get().to_dict()
+
+        while True:
+            pass
