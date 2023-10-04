@@ -21,7 +21,7 @@ from firebase.serverStore import (
 from firebase.usersStore import findUser
 
 from .colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
-from .functions import generateRandomId, tryPassword, tryServerName, tryServerPassword
+from .functions import generateRandomId, tryPassword
 from .messageBuffer import MessageBuffer
 
 
@@ -32,48 +32,51 @@ class HeadlessApp:
         activeServers = [server for server in allServers if server["isActive"]]
 
         if side == "join":
-            HeadlessApp.__tryToJoinServer(activeServers, userRef, userData["color"])
+            HeadlessApp.joinServer(activeServers, userRef, userData["color"])
 
         else:
             if not serverExistsInDatabase(allServers, userData["ip"]):
-                if not HeadlessApp.__createServer(allServers, userData["ip"]):
+                if not HeadlessApp.createServer(allServers, userData["ip"]):
                     return
-            serverRef = findServerRef(userData["ip"])
-            HeadlessApp.__hostServer(userData["ip"])
-            closeServer(serverRef)
-            print("Server shut down")
+            HeadlessApp.hostServer(userData["ip"])
+
+        serverRef = findServerRef(userData["ip"])
+        closeServer(serverRef)
+        print("Server shut down")
 
     @staticmethod
-    def __tryToJoinServer(servers, userRef, userColor):
+    def joinServer(servers, userRef, userColor):
         if len(servers) == 0:
             print("There are not any online servers")
             return
 
+        serverNames = [server["name"] for server in servers]
+
         print("Currently online servers:\n")
-        for index, server in enumerate(servers):
-            print(f"{index + 1}: {server['name']}")
+        for index, server in enumerate(serverNames):
+            print(f"{index + 1}: {server}")
 
         userInput = input("\nEnter server's name:\n")
-        while not findServer(servers, userInput):
-            userInput = input("Incorrect server. Try again:\n")
+        while not userInput in serverNames:
+            userInput = input("Incorrect server name. Try again:\n")
         print()
 
         server = findServer(servers, userInput)
         serverRef = findServerRef(server["ip"])
 
         if server["isPassword"]:
-            if tryPassword(server["password"]) == "exit":
-                return
+            tryPassword(server["password"])
             print("Correct password!\n")
 
         if not isUserOnServer(servers, userRef):
             addUserToServer(serverRef, server, userRef)
 
-        HeadlessApp.__joinServer(server, serverRef, userColor)
+        HeadlessApp.__connectToServer(server, serverRef, userColor)
 
     @staticmethod
-    def __joinServer(server, serverRef, userColor):
+    def __connectToServer(server, serverRef, userColor):
         mySocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        mySocket.settimeout(5)
 
         maxTries = 5
         retryInterval = 2
@@ -94,21 +97,23 @@ class HeadlessApp:
             )
             return
 
+        mySocket.settimeout(5)
+
         messages = fetchMessagesFromServer(serverRef)
         printMessages(messages)
 
-        t_waitingForUserInput = threading.Thread(
-            target=HeadlessApp.__waitForUserInput, args=(mySocket, userColor)
+        t_userInput = threading.Thread(
+            target=HeadlessApp.__userInput, args=(mySocket, userColor)
         )
-        t_readingFromServer = threading.Thread(
+        t_readData = threading.Thread(
             target=HeadlessApp.__readData, args=(mySocket, userColor)
         )
 
-        t_waitingForUserInput.start()
-        t_readingFromServer.start()
+        t_userInput.start()
+        t_readData.start()
 
     @staticmethod
-    def __waitForUserInput(mySocket, userColor):
+    def __userInput(mySocket, userColor):
         try:
             while True:
                 userInput = input(f"{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ")
@@ -144,15 +149,11 @@ class HeadlessApp:
                 return
 
     @staticmethod
-    def __createServer(servers, userIp):
-        serverName = tryServerName()
-        if serverName == "exit":
-            return
+    def createServer(servers, userIp):
+        serverName = input("Enter server's name:")
         while not isServerNameUnique(servers, serverName):
             print("This name already exists. Server name has to be unique!")
-            serverName = tryServerName()
-            if serverName == "exit":
-                return
+            serverName = input("Enter server's name:")
 
         isPassword = input(
             "Do you want your server password protected? [yes \ no]\n",
@@ -162,9 +163,7 @@ class HeadlessApp:
 
         password = ""
         if isPassword:
-            password = tryServerPassword()
-            if password == "exit":
-                return
+            password = input(f"Enter server's password:\n")
 
         serverData = {
             "name": serverName,
@@ -180,14 +179,14 @@ class HeadlessApp:
         return True
 
     @staticmethod
-    def __hostServer(serverIp):
+    def hostServer(serverIp):
         print("Creating server socket")
 
         serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         serverSocket.bind((serverIp, 2137))
         serverSocket.listen(5)
 
-        print("Server is created")
+        print("Server socket is created")
 
         serverRef = findServerRef(serverIp)
         openServer(serverRef)
@@ -198,7 +197,7 @@ class HeadlessApp:
         buffer = MessageBuffer()
 
         t_serverInput = threading.Thread(
-            target=HeadlessApp.__handleServerInput,
+            target=HeadlessApp.__serverInput,
             args=(connectedClients, serverSocket),
         )
         t_serverInput.start()
@@ -214,7 +213,7 @@ class HeadlessApp:
                     end="",
                 )
 
-                t_clientHandle = threading.Thread(
+                t_handleClient = threading.Thread(
                     target=HeadlessApp.__handleClients,
                     args=(
                         connectedClients,
@@ -223,15 +222,15 @@ class HeadlessApp:
                         buffer,
                     ),
                 )
-                t_clientHandle.start()
+                t_handleClient.start()
         except:
             return
 
     @staticmethod
-    def __handleServerInput(connectedClients, serverSocket):
-        try:
-            serverData = {"name": "server", "color": "server"}
+    def __serverInput(connectedClients, serverSocket):
+        serverData = {"name": "server", "color": "server"}
 
+        try:
             while True:
                 serverInput = input(f"{CONSOLE_COLORS['SERVER']}[Server]: ")
                 print(f"{CONSOLE_COLORS['RESET']}", end="")

@@ -3,7 +3,7 @@ import time
 import warnings
 
 from src.colors import CONSOLE_COLORS
-from src.functions import tryUserColor, tryUserName
+from src.functions import tryUserColor
 
 from .firebase_init import gc
 
@@ -101,7 +101,8 @@ def findUser(userIp: str):
 
 
 def prepareNewUser(userIp: str) -> dict:
-    return {"name": tryUserName(), "ip": userIp, "color": tryUserColor()}
+    name = input("Enter your username:")
+    return {"name": name, "ip": userIp, "color": tryUserColor()}
 
 
 def createUser(userData):

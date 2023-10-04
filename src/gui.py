@@ -1,12 +1,23 @@
-import customtkinter as ctk
-from firebase.serverStore import fetchServers, findServerRef, serverExistsInDatabase, closeServer, isServerNameUnique, \
-    createServer, openServer
-from firebase.messagesStore import fetchMessagesFromServer
-from firebase.usersStore import findUser
-from google.cloud import firestore
-from .colors import HEX_COLORS
-import threading
 import socket
+import threading
+import time
+
+import customtkinter as ctk
+from google.cloud import firestore
+
+from firebase.messagesStore import fetchMessagesFromServer
+from firebase.serverStore import (
+    closeServer,
+    createServer,
+    fetchServers,
+    findServerRef,
+    isServerNameUnique,
+    openServer,
+    serverExistsInDatabase,
+)
+from firebase.usersStore import findUser
+
+from .colors import HEX_COLORS
 from .messageBuffer import MessageBuffer
 
 selectedServer = None
@@ -23,20 +34,20 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
     def drawServerList(self, servers):
         font = ctk.CTkFont(family="Arial", size=25)
 
-        for i, server in enumerate(servers):
+        for server in servers:
             ctk.CTkButton(
                 self,
                 command=lambda: self.__handleChooseServerButtonClick(server),
                 text=server["name"],
                 font=font,
                 width=self.width,
-                height=50
+                height=50,
             ).pack(pady=10, padx=50)
 
     def drawMessages(self, messages, myIp):
         font = ctk.CTkFont(family="Arial", size=15)
 
-        for i, message in enumerate(messages):
+        for message in messages:
             userRef = message["user"]
             if userRef.id not in self.userRefs:
                 user = userRef.get().to_dict()
@@ -44,7 +55,7 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
             else:
                 user = self.userRefs[userRef.id]
 
-            anchor = 'e' if user["ip"] == myIp else 'w'
+            anchor = "e" if user["ip"] == myIp else "w"
 
             ctk.CTkLabel(
                 self,
@@ -53,7 +64,7 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
                 fg_color=(HEX_COLORS[user["color"].upper()]),
                 corner_radius=15,
                 justify="left",
-                wraplength=self.width - 200
+                wraplength=self.width - 200,
             ).pack(padx=5, pady=5, ipadx=15, ipady=5, anchor=anchor)
 
     def drawMessage(self, message, userRef):
@@ -72,8 +83,8 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
             fg_color=(HEX_COLORS[user["color"].upper()]),
             corner_radius=15,
             justify="left",
-            wraplength=self.width - 200
-        ).pack(padx=5, pady=5, ipadx=15, ipady=5, anchor='e')
+            wraplength=self.width - 200,
+        ).pack(padx=5, pady=5, ipadx=15, ipady=5, anchor="e")
 
     def __handleChooseServerButtonClick(self, server):
         if server["isPassword"]:
@@ -117,23 +128,25 @@ class GuiApp:
 
         if side == "host":
             if not serverExistsInDatabase(allServers, userData["ip"]):
-                if not GuiApp.__createServer(allServers, userData["ip"]):
+                if not GuiApp.createServer(allServers, userData["ip"]):
                     return
             serverRef = findServerRef(userData["ip"])
-            GuiApp.__hostServer(userData["ip"])
+            GuiApp.hostServer(userData["ip"])
             closeServer(serverRef)
 
         elif side == "join":
             GuiApp.createServersWindow(activeServers, userData, userRef)
 
     @staticmethod
-    def createServersWindow(servers, userData, userRef):
+    def createServersWindow(
+        servers: list, userData: dict, userRef: firestore.DocumentReference
+    ):
         app = Window(width=GuiApp.windowWidth, height=GuiApp.windowHeight)
 
         frame = ScrollableFrame(
             master=app,
-            width=GuiApp.windowWidth * .9,
-            height=GuiApp.windowHeight * .75,
+            width=GuiApp.windowWidth * 0.9,
+            height=GuiApp.windowHeight * 0.75,
         )
         frame.pack()
         frame.drawServerList(servers)
@@ -141,60 +154,62 @@ class GuiApp:
         app.mainloop()
 
         if selectedServer:
-            GuiApp.__joinServer(userData, userRef)
+            GuiApp.joinServer(userData, userRef)
 
     @staticmethod
-    def __joinServer(userData, userRef):
+    def joinServer(userData: dict, userRef: firestore.DocumentReference):
         mySocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         mySocket.settimeout(5)
 
         maxTries = 5
         retryInterval = 2
 
-        # for attempt in range(maxTries):
-        #     try:
-        #         mySocket.connect((selectedServer["ip"], 2137))
-        #     except:
-        #         print(
-        #             f"Attempt {attempt + 1}/{maxTries}: Connection refused. Retrying in {retryInterval} seconds..."
-        #         )
-        #         time.sleep(retryInterval)
-        #     else:
-        #         break
-        # else:
-        #     print(
-        #         f"Failed to connect to server after {maxTries} attempts. Maybe the server is down?"
-        #     )
-        #     return
+        for attempt in range(maxTries):
+            try:
+                mySocket.connect((selectedServer["ip"], 2137))
+            except:
+                print(
+                    f"Attempt {attempt + 1}/{maxTries}: Connection refused. Retrying in {retryInterval} seconds..."
+                )
+                time.sleep(retryInterval)
+            else:
+                break
+        else:
+            print(
+                f"Failed to connect to server after {maxTries} attempts. Maybe the server is down?"
+            )
+            return
 
         mySocket.settimeout(None)
 
         GuiApp.createMessagesWindow(userData, mySocket, userRef)
 
     @staticmethod
-    def createMessagesWindow(userData, mySocket, userRef):
+    def createMessagesWindow(
+        userData: dict, mySocket: socket.socket, userRef: firestore.DocumentReference
+    ):
         def __handleButtonPress(event=None):
-            GuiApp.__handleOutput(frame, mySocket, entry.get(), userRef)
+            GuiApp.__userOutput(frame, mySocket, entry.get(), userRef)
             entry.delete(0, ctk.END)
 
         app = Window(width=GuiApp.windowWidth, height=GuiApp.windowHeight)
-        app.bind('<Return>', __handleButtonPress)
+        app.bind("<Return>", __handleButtonPress)
 
         font = ctk.CTkFont(family="Arial", size=15)
 
         frame = ScrollableFrame(
             master=app,
-            width=GuiApp.windowWidth * .9,
-            height=GuiApp.windowHeight * .9,
+            width=GuiApp.windowWidth * 0.9,
+            height=GuiApp.windowHeight * 0.9,
         )
         frame.pack()
 
         entry = ctk.CTkEntry(
             master=app,
             placeholder_text="Enter message...",
-            width=int(GuiApp.windowWidth * .9),
-            height=int(GuiApp.windowHeight * .1),
-            font=font
+            width=int(GuiApp.windowWidth * 0.9),
+            height=int(GuiApp.windowHeight * 0.1),
+            font=font,
         )
         entry.pack()
 
@@ -202,13 +217,15 @@ class GuiApp:
         messages = fetchMessagesFromServer(serverRef)
         frame.drawMessages(messages, userData["ip"])
 
-        t_messageInput = threading.Thread(target=GuiApp.__handleInput, args=(frame, mySocket))
+        t_messageInput = threading.Thread(
+            target=GuiApp.__userInput, args=(frame, mySocket)
+        )
         # t_messageInput.start()
 
         app.mainloop()
 
     @staticmethod
-    def __handleInput(window, mySocket):
+    def __userInput(window: ctk.CTk, mySocket: socket.socket):
         while True:
             try:
                 if len(mySocket.recv(1, socket.MSG_PEEK)):
@@ -216,32 +233,45 @@ class GuiApp:
                     window.drawMessages()
 
             except ConnectionAbortedError:
-                print("Failed to read a message from server. Connection to the server is broken")
+                print(
+                    "Failed to read a message from server. Connection to the server is broken"
+                )
                 return
 
     @staticmethod
-    def __handleOutput(window, mySocket, message, userRef):
+    def __userOutput(
+        window: ctk.CTk,
+        mySocket: socket.socket,
+        message: str,
+        userRef: firestore.DocumentReference,
+    ):
         # mySocket.send(message.encode())
         window.drawMessage(message, userRef)
 
     @staticmethod
-    def __createServer(servers, myIp):
-        nameDialog = ctk.CTkInputDialog(text="Enter server's name:", title="Server's name")
+    def createServer(servers: list, myIp: str):
+        nameDialog = ctk.CTkInputDialog(
+            text="Enter server's name:", title="Server's name"
+        )
         name = nameDialog.get_input()
 
         if not name or name == "":
             return False
 
         while not isServerNameUnique(servers, name):
-            nameDialog = ctk.CTkInputDialog(text="(Name already exists. Choose another one)\nEnter server's name:",
-                                            title="Server's name")
+            nameDialog = ctk.CTkInputDialog(
+                text="(Name already exists. Choose another one)\nEnter server's name:",
+                title="Server's name",
+            )
             name = nameDialog.get_input()
 
             if not name or name == "":
                 return False
 
-        passwordDialog = ctk.CTkInputDialog(text="Enter server's password\nLeave empty if you want no password",
-                                            title="Server's password")
+        passwordDialog = ctk.CTkInputDialog(
+            text="Enter server's password\nLeave empty if you want no password",
+            title="Server's password",
+        )
         password = passwordDialog.get_input()
 
         if not password:
@@ -256,14 +286,14 @@ class GuiApp:
             "isPassword": isPassword,
             "password": password,
             "isActive": True,
-            "users": []
+            "users": [],
         }
 
         createServer(serverData)
         return True
 
     @staticmethod
-    def __hostServer(serverIp):
+    def hostServer(serverIp: str):
         print("Creating server socket")
 
         serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -287,14 +317,27 @@ class GuiApp:
 
                 connectedClients.append({clientIp: clientSocket})
 
-                t_clientHandle = threading.Thread(target=GuiApp.handleClients, args=(connectedClients, [clientIp, clientSocket], serverRef, buffer))
+                t_clientHandle = threading.Thread(
+                    target=GuiApp.handleClients,
+                    args=(
+                        connectedClients,
+                        [clientIp, clientSocket],
+                        serverRef,
+                        buffer,
+                    ),
+                )
                 t_clientHandle.start()
 
         except:
             return
 
     @staticmethod
-    def __handleClients(connectedClients, currClient, serverRef, buffer):
+    def __handleClients(
+        connectedClients: list,
+        currClient: tuple,
+        serverRef: firestore.DocumentReference,
+        buffer: MessageBuffer,
+    ):
         currClientIp, currClientSocket = currClient
         currClientRef = findUser(currClientIp)
         currClientData = currClientRef.get().to_dict()

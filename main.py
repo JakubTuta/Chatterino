@@ -8,8 +8,7 @@ def main():
     userIp = getUserInfo()
     userRef, userData = fetchUser(userIp)
 
-    # mode = tryMode()
-    mode = "gui"
+    mode = tryMode()
 
     if mode == "exit":
         return

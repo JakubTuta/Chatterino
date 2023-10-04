@@ -73,56 +73,20 @@ def getUserInfo() -> str:
 
 
 def tryPassword(correctPassword: str):
-    try:
-        userInput = input("Enter password:\n")
-        while userInput != correctPassword:
-            userInput = input("Incorrect password. Try again:\n")
-    except KeyboardInterrupt:
-        return "exit"
-
-
-def tryServerName():
-    try:
-        forbiddenWords = ["exit"]
-        data = input(f"Enter server's name:\n")
-        while data in forbiddenWords:
-            data = input(f'You can\'t use "{data}". Try again:\n')
-        return data
-    except KeyboardInterrupt:
-        return "exit"
-
-
-def tryServerPassword():
-    forbiddenWords = ["exit"]
-    data = input(f"Enter server's password:\n")
-    while data in forbiddenWords:
-        data = input(f'You can\'t use "{data}". Try again:\n')
-    return data
-
-
-def tryUserName():
-    try:
-        forbiddenWords = ["back", "exit"]
-        userInput = input("Enter your name in the chat:\n")
-        while userInput in forbiddenWords:
-            userInput = input(f'You can\'t use "{userInput}". Try again:\n')
-        return userInput
-    except KeyboardInterrupt:
-        return "exit"
+    userInput = input("Enter password:\n")
+    while userInput != correctPassword:
+        userInput = input("Incorrect password. Try again:\n")
 
 
 def tryUserColor():
-    try:
-        availableColors = list(CONSOLE_USER_COLORS.keys())
-        availableColors.pop(0)
-        userInput = input(
-            f"Choose one of the following colors for your texts in chat:\n{', '.join(availableColors)}\n"
-        )
-        while userInput.upper() not in availableColors:
-            userInput = input(f'You can\'t use "{userInput}". Try again:\n')
-        return userInput
-    except KeyboardInterrupt:
-        return "exit"
+    availableColors = list(CONSOLE_USER_COLORS.keys())
+    availableColors.pop(0)
+    userInput = input(
+        f"Choose one of the following colors for your texts in chat:\n{', '.join(availableColors)}\n"
+    )
+    while userInput.upper() not in availableColors:
+        userInput = input(f'You can\'t use "{userInput}". Try again:\n')
+    return userInput
 
 
 def generateRandomId():
