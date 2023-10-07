@@ -40,9 +40,9 @@ class HeadlessApp:
                     return
             HeadlessApp.hostServer(userData["ip"])
 
-        serverRef = findServerRef(userData["ip"])
-        closeServer(serverRef)
-        print("Server shut down")
+            serverRef = findServerRef(userData["ip"])
+            closeServer(serverRef)
+            print("Server shut down")
 
     @staticmethod
     def joinServer(servers, userRef, userColor):
@@ -68,7 +68,7 @@ class HeadlessApp:
             tryPassword(server["password"])
             print("Correct password!\n")
 
-        if not isUserOnServer(servers, userRef):
+        if not isUserOnServer(server, userRef):
             addUserToServer(serverRef, server, userRef)
 
         HeadlessApp.__connectToServer(server, serverRef, userColor)
@@ -103,17 +103,17 @@ class HeadlessApp:
         printMessages(messages)
 
         t_userInput = threading.Thread(
-            target=HeadlessApp.__userInput, args=(mySocket, userColor)
+            target=HeadlessApp.__userSendMessage, args=(mySocket, userColor)
         )
         t_readData = threading.Thread(
-            target=HeadlessApp.__readData, args=(mySocket, userColor)
+            target=HeadlessApp.__userReadMessage, args=(mySocket, userColor)
         )
 
         t_userInput.start()
         t_readData.start()
 
     @staticmethod
-    def __userInput(mySocket, userColor):
+    def __userSendMessage(mySocket, userColor):
         try:
             while True:
                 userInput = input(f"{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ")
@@ -124,15 +124,15 @@ class HeadlessApp:
 
                 mySocket.send(userInput.encode())
 
-        except ConnectionAbortedError:
-            print("Failed to send the message. Connection to the server is broken")
-            return
-
         except KeyboardInterrupt:
             mySocket.close()
 
+        except:
+            print("Failed to send the message. Connection to the server is broken")
+            return
+
     @staticmethod
-    def __readData(mySocket, userColor):
+    def __userReadMessage(mySocket, userColor):
         while True:
             try:
                 if len(mySocket.recv(1, socket.MSG_PEEK)):
@@ -142,7 +142,7 @@ class HeadlessApp:
                         end="",
                     )
 
-            except ConnectionAbortedError:
+            except:
                 print(
                     "Failed to read a message from server. Connection to the server is broken"
                 )
@@ -259,29 +259,32 @@ class HeadlessApp:
         currClientData = currClientRef.get().to_dict()
 
         while True:
-            if len(currClientSocket.recv(1, socket.MSG_PEEK)):
-                incomingData = currClientSocket.recv(1024).decode()
-                formattedMessage = HeadlessApp.__formatMessage(
-                    incomingData, currClientData
-                )
-                print(
-                    f"\r{CONSOLE_COLORS['RESET']}{formattedMessage}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
-                    end="",
-                )
-                buffer.push(
-                    {
-                        "id": generateRandomId(),
-                        "server": serverRef,
-                        "user": currClientRef,
-                        "text": incomingData,
-                        "time": datetime.now(),
-                    }
-                )
+            try:
+                if len(currClientSocket.recv(1, socket.MSG_PEEK)):
+                    incomingData = currClientSocket.recv(1024).decode()
+                    formattedMessage = HeadlessApp.__formatMessage(
+                        incomingData, currClientData
+                    )
+                    print(
+                        f"\r{CONSOLE_COLORS['RESET']}{formattedMessage}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
+                        end="",
+                    )
+                    buffer.push(
+                        {
+                            "id": generateRandomId(),
+                            "server": serverRef,
+                            "user": currClientRef,
+                            "text": incomingData,
+                            "time": datetime.now(),
+                        }
+                    )
 
-                for client in connectedClients:
-                    for clientIp, clientSocket in client.items():
-                        if clientIp != currClientIp:
-                            clientSocket.send(formattedMessage.encode())
+                    for client in connectedClients:
+                        for clientIp, clientSocket in client.items():
+                            if clientIp != currClientIp:
+                                clientSocket.send(formattedMessage.encode())
+            except:
+                return
 
     @staticmethod
     def __formatMessage(messageText, userData):

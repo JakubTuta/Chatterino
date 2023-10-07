@@ -1,23 +1,27 @@
 import socket
 import threading
 import time
+from datetime import datetime
 
 import customtkinter as ctk
 from google.cloud import firestore
 
 from firebase.messagesStore import fetchMessagesFromServer
 from firebase.serverStore import (
+    addUserToServer,
     closeServer,
     createServer,
     fetchServers,
     findServerRef,
     isServerNameUnique,
+    isUserOnServer,
     openServer,
     serverExistsInDatabase,
 )
 from firebase.usersStore import findUser
 
 from .colors import HEX_COLORS
+from .functions import generateRandomId
 from .messageBuffer import MessageBuffer
 
 selectedServer = None
@@ -45,7 +49,7 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
             ).pack(pady=10, padx=50)
 
     def drawMessages(self, messages, myIp):
-        font = ctk.CTkFont(family="Arial", size=15)
+        font = ctk.CTkFont(family="Arial", size=18)
 
         for message in messages:
             userRef = message["user"]
@@ -56,6 +60,10 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
                 user = self.userRefs[userRef.id]
 
             anchor = "e" if user["ip"] == myIp else "w"
+
+            ctk.CTkLabel(self, text=user["name"], justify="left").pack(
+                padx=10, anchor=anchor
+            )
 
             ctk.CTkLabel(
                 self,
@@ -68,13 +76,15 @@ class ScrollableFrame(ctk.CTkScrollableFrame):
             ).pack(padx=5, pady=5, ipadx=15, ipady=5, anchor=anchor)
 
     def drawMessage(self, message, userRef):
-        font = ctk.CTkFont(family="Arial", size=15)
+        font = ctk.CTkFont(family="Arial", size=18)
 
         if userRef.id not in self.userRefs:
             user = userRef.get().to_dict()
             self.userRefs[userRef.id] = user
         else:
             user = self.userRefs[userRef.id]
+
+        ctk.CTkLabel(self, text=user["name"], justify="left").pack(padx=10, anchor="e")
 
         ctk.CTkLabel(
             self,
@@ -182,6 +192,10 @@ class GuiApp:
 
         mySocket.settimeout(None)
 
+        serverRef = findServerRef(selectedServer["ip"])
+        if not isUserOnServer(selectedServer, userRef):
+            addUserToServer(serverRef, selectedServer, userRef)
+
         GuiApp.createMessagesWindow(userData, mySocket, userRef)
 
     @staticmethod
@@ -189,7 +203,7 @@ class GuiApp:
         userData: dict, mySocket: socket.socket, userRef: firestore.DocumentReference
     ):
         def __handleButtonPress(event=None):
-            GuiApp.__userOutput(frame, mySocket, entry.get(), userRef)
+            GuiApp.__userSendMessage(frame, mySocket, entry.get(), userRef)
             entry.delete(0, ctk.END)
 
         app = Window(width=GuiApp.windowWidth, height=GuiApp.windowHeight)
@@ -217,36 +231,40 @@ class GuiApp:
         messages = fetchMessagesFromServer(serverRef)
         frame.drawMessages(messages, userData["ip"])
 
-        t_messageInput = threading.Thread(
-            target=GuiApp.__userInput, args=(frame, mySocket)
+        t_messageRead = threading.Thread(
+            target=GuiApp.__userReadMessage, args=(frame, mySocket)
         )
-        # t_messageInput.start()
+        t_messageRead.start()
 
         app.mainloop()
 
     @staticmethod
-    def __userInput(window: ctk.CTk, mySocket: socket.socket):
+    def __userReadMessage(window: ctk.CTk, mySocket: socket.socket):
         while True:
             try:
                 if len(mySocket.recv(1, socket.MSG_PEEK)):
                     incomingData = mySocket.recv(1024).decode()
-                    window.drawMessages()
+                    userRef, message = incomingData.split(":")
+                    window.drawMessage(message, userRef)
 
-            except ConnectionAbortedError:
+            except:
                 print(
                     "Failed to read a message from server. Connection to the server is broken"
                 )
                 return
 
     @staticmethod
-    def __userOutput(
+    def __userSendMessage(
         window: ctk.CTk,
         mySocket: socket.socket,
         message: str,
         userRef: firestore.DocumentReference,
     ):
-        # mySocket.send(message.encode())
-        window.drawMessage(message, userRef)
+        try:
+            mySocket.send(message.encode())
+            window.drawMessage(message, userRef)
+        except:
+            return
 
     @staticmethod
     def createServer(servers: list, myIp: str):
@@ -318,7 +336,7 @@ class GuiApp:
                 connectedClients.append({clientIp: clientSocket})
 
                 t_clientHandle = threading.Thread(
-                    target=GuiApp.handleClients,
+                    target=GuiApp.__handleClients,
                     args=(
                         connectedClients,
                         [clientIp, clientSocket],
@@ -340,7 +358,28 @@ class GuiApp:
     ):
         currClientIp, currClientSocket = currClient
         currClientRef = findUser(currClientIp)
-        currClientData = currClientRef.get().to_dict()
+        # currClientData = currClientRef.get().to_dict()
 
         while True:
-            pass
+            try:
+                if len(currClientSocket.recv(1, socket.MSG_PEEK)):
+                    incomingData = currClientSocket.recv(1024).decode()
+
+                    buffer.push(
+                        {
+                            "id": generateRandomId(),
+                            "server": serverRef,
+                            "user": currClientRef,
+                            "text": incomingData,
+                            "time": datetime.now(),
+                        }
+                    )
+
+                    for client in connectedClients:
+                        for clientIp, clientSocket in client.items():
+                            if clientIp != currClientIp:
+                                clientSocket.send(
+                                    f"{currClientRef}:{incomingData}".encode()
+                                )
+            except ConnectionResetError:
+                return

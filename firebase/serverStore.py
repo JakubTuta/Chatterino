@@ -118,11 +118,10 @@ def findServerRef(serverIp: str) -> Union[firestore.DocumentReference, None]:
     return None
 
 
-def isUserOnServer(servers: list[dict], userRef: firestore.DocumentReference) -> bool:
-    for server in servers:
-        for user in server["users"]:
-            if user.id == userRef.id:
-                return True
+def isUserOnServer(server: dict, userRef: firestore.DocumentReference) -> bool:
+    for user in server["users"]:
+        if user.id == userRef.id:
+            return True
     return False
 
 
