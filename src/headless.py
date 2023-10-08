@@ -1,4 +1,6 @@
+import msvcrt
 import socket
+import sys
 import threading
 import time
 from datetime import datetime
@@ -23,6 +25,9 @@ from firebase.usersStore import findUser
 from .colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 from .functions import generateRandomId, tryPassword
 from .messageBuffer import MessageBuffer
+
+userInput = ""
+serverInput = ""
 
 
 class HeadlessApp:
@@ -97,7 +102,7 @@ class HeadlessApp:
             )
             return
 
-        mySocket.settimeout(5)
+        mySocket.settimeout(None)
 
         messages = fetchMessagesFromServer(serverRef)
         printMessages(messages)
@@ -112,17 +117,35 @@ class HeadlessApp:
         t_userInput.start()
         t_readData.start()
 
+        t_userInput.join()
+        t_readData.join()
+
     @staticmethod
     def __userSendMessage(mySocket, userColor):
+        global userInput
+        userInput = ""
+        print(f"{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ", end="")
+        sys.stdout.flush()
+
         try:
             while True:
-                userInput = input(f"{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ")
-                print(f"{CONSOLE_COLORS['RESET']}", end="")
+                if msvcrt.kbhit():
+                    char = msvcrt.getch().decode()
 
-                if userInput == "exit":
-                    raise KeyboardInterrupt
+                    if char == "\r" or char == "\n" or char == "\r\n":
+                        mySocket.send(userInput.encode())
+                        print(
+                            f"\n{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ", end=""
+                        )
+                        userInput = ""
+                    else:
+                        userInput += char
 
-                mySocket.send(userInput.encode())
+                        print(char, end="")
+                        sys.stdout.flush()
+
+                        if userInput.lower() == "exit":
+                            raise KeyboardInterrupt
 
         except KeyboardInterrupt:
             mySocket.close()
@@ -138,13 +161,14 @@ class HeadlessApp:
                 if len(mySocket.recv(1, socket.MSG_PEEK)):
                     incomingData = mySocket.recv(1024).decode()
                     print(
-                        f"\r{CONSOLE_COLORS['RESET']}{incomingData}\n{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ",
+                        f"\r{CONSOLE_COLORS['RESET']}{incomingData}\n{CONSOLE_USER_COLORS[userColor.upper()]}[You]: {userInput}",
                         end="",
                     )
 
             except:
                 print(
-                    "Failed to read a message from server. Connection to the server is broken"
+                    "Failed to read a message from server. Connection to the server is broken",
+                    mySocket,
                 )
                 return
 
@@ -191,14 +215,17 @@ class HeadlessApp:
         serverRef = findServerRef(serverIp)
         openServer(serverRef)
 
-        print("Waiting for users")
+        print("Waiting for users", end="\n\n")
+
+        messages = fetchMessagesFromServer(serverRef)
+        printMessages(messages)
 
         connectedClients = []
         buffer = MessageBuffer()
 
         t_serverInput = threading.Thread(
             target=HeadlessApp.__serverInput,
-            args=(connectedClients, serverSocket),
+            args=(connectedClients, serverSocket, buffer, serverRef),
         )
         t_serverInput.start()
 
@@ -227,24 +254,49 @@ class HeadlessApp:
             return
 
     @staticmethod
-    def __serverInput(connectedClients, serverSocket):
+    def __serverInput(connectedClients, serverSocket, buffer, serverRef):
+        global serverInput
+        serverInput = ""
         serverData = {"name": "server", "color": "server"}
+
+        print(f"{CONSOLE_COLORS['SERVER']}[Server]: ", end="")
+        sys.stdout.flush()
 
         try:
             while True:
-                serverInput = input(f"{CONSOLE_COLORS['SERVER']}[Server]: ")
-                print(f"{CONSOLE_COLORS['RESET']}", end="")
+                if msvcrt.kbhit():
+                    char = msvcrt.getch().decode()
 
-                if serverInput.lower() == "exit":
-                    raise
+                    if char == "\r" or char == "\n" or char == "\r\n":
+                        if not serverInput.startswith("!"):
+                            buffer.push(
+                                {
+                                    "id": generateRandomId(),
+                                    "server": serverRef,
+                                    "user": serverRef,
+                                    "text": serverInput,
+                                    "time": datetime.now(),
+                                    "isServer": True,
+                                }
+                            )
 
-                for client in connectedClients:
-                    for _, clientSocket in client.items():
-                        clientSocket.send(
-                            HeadlessApp.__formatMessage(
-                                serverInput, serverData
-                            ).encode()
-                        )
+                        for client in connectedClients:
+                            for _, clientSocket in client.items():
+                                clientSocket.send(
+                                    HeadlessApp.__formatMessage(
+                                        serverInput, serverData
+                                    ).encode()
+                                )
+                        print(f"\n{CONSOLE_COLORS['SERVER']}[Server]: ", end="")
+                        serverInput = ""
+                    else:
+                        serverInput += char
+
+                        print(char, end="")
+                        sys.stdout.flush()
+
+                        if serverInput.lower() == "exit":
+                            raise
 
         except:
             print(f"{CONSOLE_COLORS['RESET']}\nShutting down server...")
@@ -266,7 +318,7 @@ class HeadlessApp:
                         incomingData, currClientData
                     )
                     print(
-                        f"\r{CONSOLE_COLORS['RESET']}{formattedMessage}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
+                        f"\r{CONSOLE_COLORS['RESET']}{formattedMessage}\n{CONSOLE_COLORS['SERVER']}[Server]: {serverInput}",
                         end="",
                     )
                     buffer.push(
@@ -276,6 +328,7 @@ class HeadlessApp:
                             "user": currClientRef,
                             "text": incomingData,
                             "time": datetime.now(),
+                            "isServer": False,
                         }
                     )
 

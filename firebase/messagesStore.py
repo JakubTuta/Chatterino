@@ -63,9 +63,14 @@ def printMessages(messages):
         else:
             user = userRefs[userRef.id]
 
-        print(
-            f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
-        )
+        if "isServer" in message and message["isServer"]:
+            print(
+                f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS['SERVER']}[Server]: {message['text']}{CONSOLE_COLORS['RESET']}"
+            )
+        else:
+            print(
+                f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
+            )
 
 
 def readMessagesFromServer(messages, serverRef):

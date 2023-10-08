@@ -372,6 +372,7 @@ class GuiApp:
                             "user": currClientRef,
                             "text": incomingData,
                             "time": datetime.now(),
+                            "isServer": False,
                         }
                     )
 
