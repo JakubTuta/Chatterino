@@ -7,7 +7,11 @@ from datetime import datetime
 
 from google.cloud import firestore
 
-from firebase.messagesStore import fetchMessagesFromServer, mapTimestamp, printMessages
+from firebase.messagesStore import (
+    fetch_messages_from_server,
+    mapTimestamp,
+    print_messages,
+)
 from firebase.serverStore import (
     addUserToServer,
     closeServer,
@@ -104,8 +108,8 @@ class HeadlessApp:
 
         mySocket.settimeout(None)
 
-        messages = fetchMessagesFromServer(serverRef)
-        printMessages(messages)
+        messages = fetch_messages_from_server(serverRef)
+        print_messages(messages)
 
         t_userInput = threading.Thread(
             target=HeadlessApp.__userSendMessage, args=(mySocket, userColor)
@@ -217,8 +221,8 @@ class HeadlessApp:
 
         print("Waiting for users", end="\n\n")
 
-        messages = fetchMessagesFromServer(serverRef)
-        printMessages(messages)
+        messages = fetch_messages_from_server(serverRef)
+        print_messages(messages)
 
         connectedClients = []
         buffer = MessageBuffer()

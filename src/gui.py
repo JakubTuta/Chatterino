@@ -6,7 +6,7 @@ from datetime import datetime
 import customtkinter as ctk
 from google.cloud import firestore
 
-from firebase.messagesStore import fetchMessagesFromServer
+from firebase.messagesStore import fetch_messages_from_server
 from firebase.serverStore import (
     addUserToServer,
     closeServer,
@@ -228,7 +228,7 @@ class GuiApp:
         entry.pack()
 
         serverRef = findServerRef(selectedServer["ip"])
-        messages = fetchMessagesFromServer(serverRef)
+        messages = fetch_messages_from_server(serverRef)
         frame.drawMessages(messages, userData["ip"])
 
         t_messageRead = threading.Thread(

@@ -1,97 +1,82 @@
 import threading
-import time
-import warnings
+import typing
+
+from google.cloud import firestore
 
 from src.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 
-from .firebase_init import gc
-
-isDatabaseBusy = threading.Event()
-isDatabaseBusy.clear()
-
-collectionName = "messages"
+from .firebase_init import firestore_client
+from .store import Store
 
 
-def loading(text: str):
-    phrases = [
-        f"{text}",
-        f"{text}.",
-        f"{text}..",
-        f"{text}...",
-    ]
+class MessagesStore(Store):
+    collection = firestore_client.collection("messages")
 
-    while True:
-        for phrase in phrases:
-            if not isDatabaseBusy.is_set():
-                print(" " * len(phrases[-1]), end="\r")
-                return
+    @staticmethod
+    def fetch_messages_from_server(
+        server_ref: firestore.DocumentReference,
+    ) -> typing.List[dict]:
+        messages = []
 
-            print(
-                f"{CONSOLE_COLORS['ALERT']}{phrase}{CONSOLE_COLORS['RESET']}", end="\r"
-            )
-            time.sleep(0.5)
-        print(" " * len(phrases[-1]), end="\r")
+        t1 = threading.Thread(
+            target=Store._loading, args=("Fetching messages, please wait",)
+        )
+        t2 = threading.Thread(
+            target=MessagesStore.__read_messages_from_server,
+            args=(messages, server_ref),
+        )
 
+        t2.start()
+        t1.start()
 
-def fetchMessagesFromServer(serverRef):
-    messages = []
+        t2.join()
+        t1.join()
 
-    t1 = threading.Thread(target=loading, args=("Fetching messages, please wait",))
-    t2 = threading.Thread(target=readMessagesFromServer, args=(messages, serverRef))
+        return messages
 
-    t2.start()
-    t1.start()
+    @staticmethod
+    def __map_timestamp(date) -> str:
+        return date.strftime("%d.%m.%y %H:%M")
 
-    t2.join()
-    t1.join()
+    @staticmethod
+    def print_messages(messages: list):
+        userRefs = {}
 
-    return messages
+        for message in messages:
+            userRef = message["user"]
+            if userRef.id not in userRefs:
+                user = userRef.get().to_dict()
+                userRefs[userRef.id] = user
+            else:
+                user = userRefs[userRef.id]
 
+            if "isServer" in message and message["isServer"]:
+                print(
+                    f"[{MessagesStore.__map_timestamp(message['time'])}] {CONSOLE_USER_COLORS['SERVER']}[Server]: {message['text']}{CONSOLE_COLORS['RESET']}"
+                )
+            else:
+                print(
+                    f"[{MessagesStore.__map_timestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
+                )
 
-def mapTimestamp(date):
-    return date.strftime("%d.%m.%y %H:%M")
+    @staticmethod
+    def create_message(message_data: dict) -> firestore.DocumentReference:
+        message_ref = MessagesStore.collection.add(message_data)
 
+        return message_ref
 
-def printMessages(messages):
-    userRefs = {}
+    @staticmethod
+    def __read_messages_from_server(
+        messages: list, server_ref: firestore.DocumentReference
+    ):
+        Store.is_database_busy.set()
 
-    for message in messages:
-        userRef = message["user"]
-        if userRef.id not in userRefs:
-            user = userRef.get().to_dict()
-            userRefs[userRef.id] = user
-        else:
-            user = userRefs[userRef.id]
-
-        if "isServer" in message and message["isServer"]:
-            print(
-                f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS['SERVER']}[Server]: {message['text']}{CONSOLE_COLORS['RESET']}"
-            )
-        else:
-            print(
-                f"[{mapTimestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
-            )
-
-
-def readMessagesFromServer(messages, serverRef):
-    isDatabaseBusy.set()
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        collection = gc.collection(collectionName)
-        query = collection.where("server", "==", serverRef).order_by(
+        query = MessagesStore.collection.where("server", "==", server_ref).order_by(
             "time", "ASCENDING"
         )
         docs = query.stream()
 
-    mappedDocs = [doc.to_dict() for doc in docs]
+        for doc in docs:
+            messages.append(doc.to_dict())
 
-    for doc in mappedDocs:
-        messages.append(doc)
-
-    isDatabaseBusy.clear()
-
-
-def createMessage(messageData):
-    messageRef = gc.collection(collectionName).add(messageData)
-    return messageRef
+        Store.is_database_busy.clear()

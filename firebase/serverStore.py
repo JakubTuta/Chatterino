@@ -1,142 +1,123 @@
 import threading
-import time
-import warnings
-from typing import Union
+import typing
 
 from google.cloud import firestore
 
-from src.colors import CONSOLE_COLORS
-
-from .firebase_init import gc
-
-isDatabaseBusy = threading.Event()
-isDatabaseBusy.clear()
-
-collectionName = "servers"
+from .firebase_init import firestore_client
+from .store import Store
 
 
-def fetchServers():
-    servers = []
-    t1 = threading.Thread(target=loading, args=("Fetching servers, please wait",))
-    t2 = threading.Thread(target=readServers, args=(servers,))
+class ServerStore(Store):
+    collection = firestore_client.collection("servers")
 
-    t2.start()
-    t1.start()
+    @staticmethod
+    def fetch_servers() -> typing.List[dict]:
+        servers = []
 
-    t2.join()
-    t1.join()
+        t1 = threading.Thread(
+            target=Store._loading, args=("Fetching servers, please wait",)
+        )
+        t2 = threading.Thread(target=ServerStore.__read_servers, args=(servers,))
 
-    return servers
+        t2.start()
+        t1.start()
 
+        t2.join()
+        t1.join()
 
-def createServer(data):
-    t1 = threading.Thread(target=loading, args=("Creating a server, please wait",))
-    t2 = threading.Thread(target=createServerInDatabase, args=(data,))
+        return servers
 
-    t2.start()
-    t1.start()
+    @staticmethod
+    def create_server(server_data: dict):
+        t1 = threading.Thread(
+            target=Store._loading, args=("Creating a server, please wait",)
+        )
+        t2 = threading.Thread(
+            target=ServerStore.__create_server_in_database, args=(server_data,)
+        )
 
-    t2.join()
-    t1.join()
+        t2.start()
+        t1.start()
 
+        t2.join()
+        t1.join()
 
-def loading(text: str):
-    phrases = [
-        f"{text}",
-        f"{text}.",
-        f"{text}..",
-        f"{text}...",
-    ]
-
-    while True:
-        for phrase in phrases:
-            if not isDatabaseBusy.is_set():
-                print(" " * len(phrases[-1]), end="\r")
-                return
-
-            print(
-                f"{CONSOLE_COLORS['ALERT']}{phrase}{CONSOLE_COLORS['RESET']}", end="\r"
-            )
-            time.sleep(0.5)
-        print(" " * len(phrases[-1]), end="\r")
-
-
-def readServers(serverList: list):
-    isDatabaseBusy.set()
-
-    collection = gc.collection(collectionName)
-    docs = collection.stream()
-
-    mappedDocs = [doc.to_dict() for doc in docs]
-
-    for doc in mappedDocs:
-        serverList.append(doc)
-
-    isDatabaseBusy.clear()
-
-
-def createServerInDatabase(data: dict) -> Union[firestore.DocumentReference, None]:
-    isDatabaseBusy.set()
-
-    serverRef = gc.collection(collectionName).add(data)
-
-    isDatabaseBusy.clear()
-
-    return serverRef
-
-
-def serverExistsInDatabase(servers: list[dict], serverIp: str) -> bool:
-    for server in servers:
-        if serverIp == server["ip"]:
-            return True
-    return False
-
-
-def isServerNameUnique(servers: list[dict], serverName: str) -> bool:
-    for server in servers:
-        if serverName == server["name"]:
-            return False
-    return True
-
-
-def findServer(servers: list[dict], serverName: str) -> dict:
-    for server in servers:
-        if serverName == server["name"]:
-            return server
-    return None
-
-
-def findServerRef(serverIp: str) -> Union[firestore.DocumentReference, None]:
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        collection = gc.collection(collectionName)
-        query = collection.where("ip", "==", serverIp)
+    @staticmethod
+    def is_server_in_database(server_ip: str) -> bool:
+        query = ServerStore.collection.where("ip", "==", server_ip)
         docs = query.stream()
 
-    for doc in docs:
-        return doc.reference
-    return None
+        return len(docs) > 0
 
+    @staticmethod
+    def is_server_name_unique(server_name: str) -> bool:
+        query = ServerStore.collection.where("ip", "==", server_name)
+        docs = query.stream()
 
-def isUserOnServer(server: dict, userRef: firestore.DocumentReference) -> bool:
-    for user in server["users"]:
-        if user.id == userRef.id:
-            return True
-    return False
+        return len(docs) > 0
 
+    @staticmethod
+    def find_server(
+        servers: typing.List[dict], server_name: str
+    ) -> typing.Optional[dict]:
+        for server in servers:
+            if server_name == server["name"]:
+                return server
 
-def addUserToServer(
-    serverRef: firestore.DocumentReference,
-    serverData: dict,
-    newUserRef: firestore.DocumentReference,
-):
-    serverData["users"].append(newUserRef)
-    serverRef.update({"users": serverData["users"]})
+    @staticmethod
+    def find_server_reference(
+        server_ip: str,
+    ) -> typing.Optional[firestore.DocumentReference]:
+        query = ServerStore.collection.where("ip", "==", server_ip)
+        docs = query.stream()
 
+        for doc in docs:
+            return doc.reference
 
-def openServer(serverRef):
-    serverRef.update({"isActive": True})
+    @staticmethod
+    def is_user_on_server(server: dict, user_ref: firestore.DocumentReference) -> bool:
+        for user in server["users"]:
+            if user.id == user_ref.id:
+                return True
 
+        return False
 
-def closeServer(serverRef):
-    serverRef.update({"isActive": False})
+    @staticmethod
+    def add_user_to_server(
+        server_ref: firestore.DocumentReference,
+        server_data: dict,
+        new_user_ref: firestore.DocumentReference,
+    ):
+        server_data["users"].append(new_user_ref)
+        server_ref.update({"users": server_data["users"]})
+
+    @staticmethod
+    def open_server(server_ref: firestore.DocumentReference):
+        server_ref.update({"isActive": True})
+
+    @staticmethod
+    def close_server(server_ref: firestore.DocumentReference):
+        server_ref.update({"isActive": False})
+
+    @staticmethod
+    def __read_servers(server_list: list):
+        Store.is_database_busy.set()
+
+        docs = ServerStore.collection.stream()
+
+        for doc in docs:
+            server_list.append(doc.to_dict())
+
+        Store.is_database_busy.clear()
+
+    @staticmethod
+    def __create_server_in_database(
+        data: dict,
+    ) -> typing.Optional[firestore.DocumentReference]:
+        Store.is_database_busy.set()
+
+        server_ref = ServerStore.collection.add(data)
+
+        Store.is_database_busy.clear()
+
+        return server_ref
