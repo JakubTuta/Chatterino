@@ -5,11 +5,9 @@ from .baseModel import BaseModel
 
 @dataclasses.dataclass
 class ServerModel(BaseModel):
-    name: str
+    color: str
     ip: str
-    isPassword: bool
-    password: str
-    isActive: bool
+    name: str
 
     def __init__(self, data, reference):
         super().__init__(data, reference)

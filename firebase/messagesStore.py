@@ -3,6 +3,7 @@ import typing
 
 from google.cloud import firestore
 
+from models.messageModel import MessageModel
 from src.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 
 from .firebase_init import firestore_client
@@ -15,7 +16,7 @@ class MessagesStore(Store):
     @staticmethod
     def fetch_messages_from_server(
         server_ref: firestore.DocumentReference,
-    ) -> typing.List[dict]:
+    ) -> typing.List[MessageModel]:
         messages = []
 
         t1 = threading.Thread(
@@ -35,39 +36,37 @@ class MessagesStore(Store):
         return messages
 
     @staticmethod
-    def __map_timestamp(date) -> str:
-        return date.strftime("%d.%m.%y %H:%M")
-
-    @staticmethod
-    def print_messages(messages: list):
-        userRefs = {}
+    def print_messages(messages: typing.List[MessageModel]):
+        user_colors = {}
 
         for message in messages:
-            userRef = message["user"]
-            if userRef.id not in userRefs:
-                user = userRef.get().to_dict()
-                userRefs[userRef.id] = user
+            user_ref = message["user"]
+
+            if user_ref.id not in user_colors:
+                user = user_ref.get().to_dict()
+                user_color = user["color"]
+                user_colors[user_ref.id] = user_color
             else:
-                user = userRefs[userRef.id]
+                user_color = user_colors[user_ref.id]
 
             if "isServer" in message and message["isServer"]:
                 print(
-                    f"[{MessagesStore.__map_timestamp(message['time'])}] {CONSOLE_USER_COLORS['SERVER']}[Server]: {message['text']}{CONSOLE_COLORS['RESET']}"
+                    f"[{message['time']}] {CONSOLE_USER_COLORS['SERVER']}[Server]: {message['text']}{CONSOLE_COLORS['RESET']}"
                 )
             else:
                 print(
-                    f"[{MessagesStore.__map_timestamp(message['time'])}] {CONSOLE_USER_COLORS[user['color'].upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
+                    f"[{message['time']}] {CONSOLE_USER_COLORS[user_color.upper()]}[{user['name']}]: {message['text']}{CONSOLE_COLORS['RESET']}"
                 )
 
     @staticmethod
-    def create_message(message_data: dict) -> firestore.DocumentReference:
-        message_ref = MessagesStore.collection.add(message_data)
+    def create_message(message_data: MessageModel) -> firestore.DocumentReference:
+        message_ref = MessagesStore.collection.add(message_data.to_map())
 
         return message_ref
 
     @staticmethod
     def __read_messages_from_server(
-        messages: list, server_ref: firestore.DocumentReference
+        messages: typing.List[MessageModel], server_ref: firestore.DocumentReference
     ):
         Store.is_database_busy.set()
 
@@ -77,6 +76,6 @@ class MessagesStore(Store):
         docs = query.stream()
 
         for doc in docs:
-            messages.append(doc.to_dict())
+            messages.append(MessageModel(doc.to_dict(), doc.reference))
 
         Store.is_database_busy.clear()
