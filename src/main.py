@@ -1,7 +1,8 @@
 from firebase.usersStore import fetchUser
-from src.functions import getUserInfo, tryMode, trySide
-from src.gui import GuiApp
-from src.headless import HeadlessApp
+
+from .functions import getUserInfo, tryMode, trySide
+from .gui import GuiApp
+from .headless import HeadlessApp
 
 
 def main():
