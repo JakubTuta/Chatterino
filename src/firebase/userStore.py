@@ -4,8 +4,9 @@ import typing
 
 from google.cloud import firestore
 
-from src.colors import CONSOLE_COLORS
-from src.functions import tryUserColor
+from help.colors import CONSOLE_COLORS
+from help.functions import tryUserColor
+from models.userModel import UserModel
 
 from .firebase_init import firestore_client
 from .store import Store
@@ -36,12 +37,13 @@ class UserStore(Store):
         return users
 
     @staticmethod
-    def find_user(user_ip: str) -> typing.Optional[firestore.DocumentReference]:
+    def find_user(user_ip: str) -> typing.Optional[UserModel]:
         query = UserStore.collection.where("ip", "==", user_ip)
         docs = query.stream()
 
-        for doc in docs:
-            return doc.reference
+        user = UserModel(docs[0].to_dict(), docs[0].reference)
+
+        return user
 
     def _loading(text: str):
         phrases = [

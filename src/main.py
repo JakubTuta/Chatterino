@@ -1,31 +1,25 @@
-from firebase.usersStore import fetchUser
+import firebase.userStore as user_store
+import help.functions as help_functions
 
-from .functions import getUserInfo, tryMode, trySide
 from .gui import GuiApp
 from .headless import HeadlessApp
 
 
 def main():
-    userIp = getUserInfo()
-    userRef, userData = fetchUser(userIp)
+    user_ip = help_functions.get_user_info()
+    user_data = user_store.fetch_user(user_ip)
 
-    mode = tryMode()
-
-    if mode == "exit":
+    try:
+        mode = help_functions.check_program_mode()
+        side = help_functions.check_program_side()
+    except KeyboardInterrupt:
         return
-
-    side = trySide()
-
-    if side == "exit":
-        return
-
-    print()
 
     if mode == "headless":
-        HeadlessApp.run(side, userData, userRef)
+        HeadlessApp.run(side, user_data)
 
-    else:
-        GuiApp.run(side, userData, userRef)
+    elif mode == "gui":
+        GuiApp.run(side, user_data)
 
 
 if __name__ == "__main__":

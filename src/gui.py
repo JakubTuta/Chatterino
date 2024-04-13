@@ -18,11 +18,11 @@ from firebase.serverStore import (
     openServer,
     serverExistsInDatabase,
 )
-from firebase.usersStore import findUser
+from firebase.userStore import findUser
 
-from .colors import HEX_COLORS
-from .functions import generateRandomId
-from .messageBuffer import MessageBuffer
+from .help.colors import HEX_COLORS
+from .help.functions import generateRandomId
+from .help.messageBuffer import MessageBuffer
 
 selectedServer = None
 

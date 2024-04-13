@@ -3,8 +3,8 @@ import typing
 
 from google.cloud import firestore
 
+from help.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 from models.messageModel import MessageModel
-from src.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 
 from .firebase_init import firestore_client
 from .store import Store

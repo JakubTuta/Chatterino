@@ -11,23 +11,20 @@ from .store import Store
 
 class ServerStore(Store):
     collection = firestore_client.collection("servers")
+    servers: list[ServerModel] = []
 
     @staticmethod
-    def fetch_servers() -> typing.List[ServerModel]:
-        servers = []
-
+    def fetch_servers():
         t1 = threading.Thread(
             target=Store._loading, args=("Fetching servers, please wait",)
         )
-        t2 = threading.Thread(target=ServerStore.__read_servers, args=(servers,))
+        t2 = threading.Thread(target=ServerStore.__read_servers)
 
         t2.start()
         t1.start()
 
         t2.join()
         t1.join()
-
-        return servers
 
     @staticmethod
     def create_server(server_data: ServerModel):
@@ -46,41 +43,39 @@ class ServerStore(Store):
 
     @staticmethod
     def is_server_in_database(server_ip: str) -> bool:
-        query = ServerStore.collection.where("ip", "==", server_ip)
-        docs = query.stream()
+        for server in ServerStore.servers:
+            if server["ip"] == server_ip:
+                return True
 
-        return len(docs) > 0
+        return False
 
     @staticmethod
     def is_server_name_unique(server_name: str) -> bool:
-        query = ServerStore.collection.where("ip", "==", server_name)
-        docs = query.stream()
+        for server in ServerStore.servers:
+            if server["name"] == server_name:
+                return False
 
-        return len(docs) > 0
+        return True
 
     @staticmethod
     def find_server(
-        servers: typing.List[ServerModel], server_name: str
+        server_name: str = None, server_ip: str = None
     ) -> typing.Optional[ServerModel]:
-        for server in servers:
-            if server_name == server.name:
-                return server
+        if server_name:
+            for server in ServerStore.servers:
+                if server["name"] == server_name:
+                    return server
 
-    @staticmethod
-    def find_server_reference(
-        server_ip: str,
-    ) -> typing.Optional[firestore.DocumentReference]:
-        query = ServerStore.collection.where("ip", "==", server_ip)
-        docs = query.stream()
-
-        for doc in docs:
-            return doc.reference
+        elif server_ip:
+            for server in ServerStore.servers:
+                if server["name"] == server_name:
+                    return server
 
     @staticmethod
     def is_user_on_server(
         server: ServerModel, user_ref: firestore.DocumentReference
     ) -> bool:
-        for user in server.users:
+        for user in server["users"]:
             if user.id == user_ref.id:
                 return True
 
@@ -88,12 +83,11 @@ class ServerStore(Store):
 
     @staticmethod
     def add_user_to_server(
-        server_ref: firestore.DocumentReference,
         server_data: ServerModel,
         new_user_ref: firestore.DocumentReference,
     ):
         server_data.users.append(new_user_ref)
-        server_ref.update({"users": server_data["users"]})
+        server_data["reference"].update({"users": server_data["users"]})
 
     @staticmethod
     def open_server(server_ref: firestore.DocumentReference):
@@ -104,13 +98,14 @@ class ServerStore(Store):
         server_ref.update({"isActive": False})
 
     @staticmethod
-    def __read_servers(server_list: typing.List[ServerModel]):
+    def __read_servers():
         Store.is_database_busy.set()
 
         docs = ServerStore.collection.stream()
 
+        ServerStore.servers = []
         for doc in docs:
-            server_list.append(ServerModel(doc.to_dict(), doc.reference))
+            ServerStore.servers.append(ServerModel(doc.to_dict(), doc.reference))
 
         Store.is_database_busy.clear()
 

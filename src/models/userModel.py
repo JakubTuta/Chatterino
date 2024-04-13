@@ -4,7 +4,7 @@ from .baseModel import BaseModel
 
 
 @dataclasses.dataclass
-class ServerModel(BaseModel):
+class UserModel(BaseModel):
     color: str
     ip: str
     name: str

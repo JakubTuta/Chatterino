@@ -1,7 +1,7 @@
 import threading
 import time
 
-from src.colors import CONSOLE_COLORS
+from help.colors import CONSOLE_COLORS
 
 
 class Store:

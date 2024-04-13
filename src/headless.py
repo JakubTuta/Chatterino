@@ -7,80 +7,154 @@ from datetime import datetime
 
 from google.cloud import firestore
 
-from firebase.messagesStore import (
-    fetch_messages_from_server,
-    mapTimestamp,
-    print_messages,
-)
-from firebase.serverStore import (
-    addUserToServer,
-    closeServer,
-    createServer,
-    fetchServers,
-    findServer,
-    findServerRef,
-    isServerNameUnique,
-    isUserOnServer,
-    openServer,
-    serverExistsInDatabase,
-)
-from firebase.usersStore import findUser
-
-from .colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
-from .functions import generateRandomId, tryPassword
-from .messageBuffer import MessageBuffer
+import firebase.messagesStore as message_store
+import firebase.serverStore as server_store
+import firebase.userStore as user_store
+import help.functions as help_functions
+from help.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
+from help.messageBuffer import MessageBuffer
+from models.userModel import UserModel
 
 userInput = ""
 serverInput = ""
 
 
 class HeadlessApp:
+
     @staticmethod
-    def run(side: str, userData: dict, userRef: firestore.DocumentReference):
-        allServers = fetchServers()
-        activeServers = [server for server in allServers if server["isActive"]]
+    def run(side: str, user_data: UserModel):
+        server_store.fetch_servers()
 
         if side == "join":
-            HeadlessApp.joinServer(activeServers, userRef, userData["color"])
+            HeadlessApp.join_server(user_data["reference"], user_data)
 
         else:
-            if not serverExistsInDatabase(allServers, userData["ip"]):
-                if not HeadlessApp.createServer(allServers, userData["ip"]):
+            if not server_store.is_server_in_database(user_data["ip"]):
+                if not HeadlessApp.create_server(user_data["ip"]):
                     return
-            HeadlessApp.hostServer(userData["ip"])
 
-            serverRef = findServerRef(userData["ip"])
-            closeServer(serverRef)
+            HeadlessApp.host_server(user_data["ip"])
+
+            server_data = server_store.find_server(server_ip=user_data["ip"])
+
+            server_store.close_server(server_reference)
             print("Server shut down")
 
     @staticmethod
-    def joinServer(servers, userRef, userColor):
-        if len(servers) == 0:
-            print("There are not any online servers")
+    def join_server(user_reference: firestore.DocumentReference, user_data: UserModel):
+        online_servers = [
+            server for server in server_store.servers if server["isActive"]
+        ]
+
+        if len(online_servers) == 0:
+            print("There are no online servers")
             return
 
-        serverNames = [server["name"] for server in servers]
-
+        server_names = [server["name"] for server in server_store.servers]
         print("Currently online servers:\n")
-        for index, server in enumerate(serverNames):
-            print(f"{index + 1}: {server}")
+        for index, server_name in enumerate(server_names):
+            print(f"{index + 1}: {server_name}")
 
-        userInput = input("\nEnter server's name:\n")
-        while not userInput in serverNames:
-            userInput = input("Incorrect server name. Try again:\n")
+        user_input = input("\nEnter server's name:\n")
+        while not user_input in server_names:
+            user_input = input("Incorrect server name. Try again:\n")
         print()
 
-        server = findServer(servers, userInput)
-        serverRef = findServerRef(server["ip"])
+        server = server_store.find_server(server_name=user_input)
 
         if server["isPassword"]:
-            tryPassword(server["password"])
+            try:
+                help_functions.check_password(server["password"])
+            except KeyboardInterrupt:
+                return
+
             print("Correct password!\n")
 
-        if not isUserOnServer(server, userRef):
-            addUserToServer(serverRef, server, userRef)
+        if not server_store.is_user_on_server(server, user_reference):
+            server_store.add_user_to_server(server, user_reference)
 
-        HeadlessApp.__connectToServer(server, serverRef, userColor)
+        HeadlessApp.__connectToServer(server, user_data)
+
+    @staticmethod
+    def createServer(servers, userIp):
+        serverName = input("Enter server's name:")
+        while not isServerNameUnique(servers, serverName):
+            print("This name already exists. Server name has to be unique!")
+            serverName = input("Enter server's name:")
+
+        isPassword = input(
+            "Do you want your server password protected? [yes \ no]\n",
+        )
+
+        isPassword = True if isPassword.lower() == "yes" else False
+
+        password = ""
+        if isPassword:
+            password = input(f"Enter server's password:\n")
+
+        serverData = {
+            "name": serverName,
+            "ip": userIp,
+            "isPassword": isPassword,
+            "password": password,
+            "isActive": True,
+            "users": [],
+        }
+
+        createServer(serverData)
+        print("Server created!")
+        return True
+
+    @staticmethod
+    def hostServer(serverIp):
+        print("Creating server socket")
+
+        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        serverSocket.bind((serverIp, 2137))
+        serverSocket.listen(5)
+
+        print("Server socket is created")
+
+        serverRef = findServerRef(serverIp)
+        openServer(serverRef)
+
+        print("Waiting for users", end="\n\n")
+
+        messages = fetch_messages_from_server(serverRef)
+        print_messages(messages)
+
+        connectedClients = []
+        buffer = MessageBuffer()
+
+        t_serverInput = threading.Thread(
+            target=HeadlessApp.__serverInput,
+            args=(connectedClients, serverSocket, buffer, serverRef),
+        )
+        t_serverInput.start()
+
+        try:
+            while True:
+                clientSocket, clientAddress = serverSocket.accept()
+                clientIp = clientAddress[0]
+
+                connectedClients.append({clientIp: clientSocket})
+                print(
+                    f"\r{CONSOLE_COLORS['RESET']}Accepted connection from client: {clientIp}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
+                    end="",
+                )
+
+                t_handleClient = threading.Thread(
+                    target=HeadlessApp.__handleClients,
+                    args=(
+                        connectedClients,
+                        [clientIp, clientSocket],
+                        serverRef,
+                        buffer,
+                    ),
+                )
+                t_handleClient.start()
+        except:
+            return
 
     @staticmethod
     def __connectToServer(server, serverRef, userColor):
@@ -175,87 +249,6 @@ class HeadlessApp:
                     mySocket,
                 )
                 return
-
-    @staticmethod
-    def createServer(servers, userIp):
-        serverName = input("Enter server's name:")
-        while not isServerNameUnique(servers, serverName):
-            print("This name already exists. Server name has to be unique!")
-            serverName = input("Enter server's name:")
-
-        isPassword = input(
-            "Do you want your server password protected? [yes \ no]\n",
-        )
-
-        isPassword = True if isPassword.lower() == "yes" else False
-
-        password = ""
-        if isPassword:
-            password = input(f"Enter server's password:\n")
-
-        serverData = {
-            "name": serverName,
-            "ip": userIp,
-            "isPassword": isPassword,
-            "password": password,
-            "isActive": True,
-            "users": [],
-        }
-
-        createServer(serverData)
-        print("Server created!")
-        return True
-
-    @staticmethod
-    def hostServer(serverIp):
-        print("Creating server socket")
-
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.bind((serverIp, 2137))
-        serverSocket.listen(5)
-
-        print("Server socket is created")
-
-        serverRef = findServerRef(serverIp)
-        openServer(serverRef)
-
-        print("Waiting for users", end="\n\n")
-
-        messages = fetch_messages_from_server(serverRef)
-        print_messages(messages)
-
-        connectedClients = []
-        buffer = MessageBuffer()
-
-        t_serverInput = threading.Thread(
-            target=HeadlessApp.__serverInput,
-            args=(connectedClients, serverSocket, buffer, serverRef),
-        )
-        t_serverInput.start()
-
-        try:
-            while True:
-                clientSocket, clientAddress = serverSocket.accept()
-                clientIp = clientAddress[0]
-
-                connectedClients.append({clientIp: clientSocket})
-                print(
-                    f"\r{CONSOLE_COLORS['RESET']}Accepted connection from client: {clientIp}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
-                    end="",
-                )
-
-                t_handleClient = threading.Thread(
-                    target=HeadlessApp.__handleClients,
-                    args=(
-                        connectedClients,
-                        [clientIp, clientSocket],
-                        serverRef,
-                        buffer,
-                    ),
-                )
-                t_handleClient.start()
-        except:
-            return
 
     @staticmethod
     def __serverInput(connectedClients, serverSocket, buffer, serverRef):
