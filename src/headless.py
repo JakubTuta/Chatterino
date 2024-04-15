@@ -3,6 +3,7 @@ import socket
 import sys
 import threading
 import time
+import typing
 from datetime import datetime
 
 from google.cloud import firestore
@@ -13,35 +14,36 @@ import firebase.userStore as user_store
 import help.functions as help_functions
 from help.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 from help.messageBuffer import MessageBuffer
+from models.serverModel import ServerModel
 from models.userModel import UserModel
 
-userInput = ""
-serverInput = ""
+user_input = ""
+server_input = ""
 
 
 class HeadlessApp:
 
     @staticmethod
-    def run(side: str, user_data: UserModel):
+    def run(side: str):
         server_store.fetch_servers()
 
         if side == "join":
-            HeadlessApp.join_server(user_data["reference"], user_data)
+            HeadlessApp.join_server()
 
-        else:
-            if not server_store.is_server_in_database(user_data["ip"]):
-                if not HeadlessApp.create_server(user_data["ip"]):
+        elif side == "host":
+            if not server_store.is_server_in_database():
+                server_data = HeadlessApp.create_server()
+
+                if not server_data:
                     return
 
-            HeadlessApp.host_server(user_data["ip"])
+            HeadlessApp.host_server(server_data)
 
-            server_data = server_store.find_server(server_ip=user_data["ip"])
-
-            server_store.close_server(server_reference)
+            server_store.close_server(server_data["reference"])
             print("Server shut down")
 
     @staticmethod
-    def join_server(user_reference: firestore.DocumentReference, user_data: UserModel):
+    def join_server():
         online_servers = [
             server for server in server_store.servers if server["isActive"]
         ]
@@ -70,103 +72,111 @@ class HeadlessApp:
 
             print("Correct password!\n")
 
-        if not server_store.is_user_on_server(server, user_reference):
-            server_store.add_user_to_server(server, user_reference)
+        user_data = user_store.user_data
+        if not server_store.is_user_on_server(server, user_data["reference"]):
+            server_store.add_user_to_server(server, user_data["reference"])
 
-        HeadlessApp.__connectToServer(server, user_data)
+        HeadlessApp.__connect_to_server(server)
 
     @staticmethod
-    def createServer(servers, userIp):
-        serverName = input("Enter server's name:")
-        while not isServerNameUnique(servers, serverName):
-            print("This name already exists. Server name has to be unique!")
-            serverName = input("Enter server's name:")
+    def create_server() -> typing.Optional[ServerModel]:
+        try:
+            server_name = server_store.create_server_name()
 
-        isPassword = input(
-            "Do you want your server password protected? [yes \ no]\n",
-        )
+            is_password_protected = input(
+                "Do you want your server password protected? [yes \ no]\n",
+            )
+            is_password_protected = (
+                True if is_password_protected.lower() == "yes" else False
+            )
 
-        isPassword = True if isPassword.lower() == "yes" else False
+            password = ""
+            if is_password_protected:
+                password = input(f"Enter server's password:\n")
 
-        password = ""
-        if isPassword:
-            password = input(f"Enter server's password:\n")
+        except KeyboardInterrupt:
+            return
 
-        serverData = {
-            "name": serverName,
-            "ip": userIp,
-            "isPassword": isPassword,
+        user_data = user_store.user_data
+
+        server_data = {
+            "name": server_name,
+            "ip": user_data["ip"],
+            "isPassword": is_password_protected,
             "password": password,
             "isActive": True,
             "users": [],
         }
 
-        createServer(serverData)
+        server_reference = server_store.create_server(server_data)
+        server_model = ServerModel(server_data, server_reference)
+
         print("Server created!")
-        return True
+
+        return server_model
 
     @staticmethod
-    def hostServer(serverIp):
+    def host_server(server_data: ServerModel):
         print("Creating server socket")
 
-        serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        serverSocket.bind((serverIp, 2137))
-        serverSocket.listen(5)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((server_data["ip"], 2137))
+        server_socket.listen(5)
+
+        connected_clients = []
+        buffer = MessageBuffer()
 
         print("Server socket is created")
 
-        serverRef = findServerRef(serverIp)
-        openServer(serverRef)
+        server_store.open_server(server_data["reference"])
 
         print("Waiting for users", end="\n\n")
 
-        messages = fetch_messages_from_server(serverRef)
-        print_messages(messages)
+        messages = message_store.fetch_messages_from_server(server_data["reference"])
+        message_store.print_messages(messages)
 
-        connectedClients = []
-        buffer = MessageBuffer()
-
-        t_serverInput = threading.Thread(
-            target=HeadlessApp.__serverInput,
-            args=(connectedClients, serverSocket, buffer, serverRef),
+        t_server_input = threading.Thread(
+            target=HeadlessApp.__server_input,
+            args=(connected_clients, server_socket, buffer, server_data["reference"]),
         )
-        t_serverInput.start()
+        t_server_input.start()
 
-        try:
-            while True:
-                clientSocket, clientAddress = serverSocket.accept()
-                clientIp = clientAddress[0]
+        while True:
+            try:
+                client_socket, client_address = server_socket.accept()
+                client_ip = client_address[0]
 
-                connectedClients.append({clientIp: clientSocket})
+                connected_clients.append({client_ip: client_socket})
                 print(
-                    f"\r{CONSOLE_COLORS['RESET']}Accepted connection from client: {clientIp}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
+                    f"\r{CONSOLE_COLORS['RESET']}Accepted connection from client: {client_ip}\n{CONSOLE_COLORS['SERVER']}[Server]: ",
                     end="",
                 )
 
-                t_handleClient = threading.Thread(
-                    target=HeadlessApp.__handleClients,
+                t_handle_client = threading.Thread(
+                    target=HeadlessApp.__handle_clients,
                     args=(
-                        connectedClients,
-                        [clientIp, clientSocket],
-                        serverRef,
+                        connected_clients,
+                        [client_ip, client_socket],
+                        server_data["reference"],
                         buffer,
                     ),
                 )
-                t_handleClient.start()
-        except:
-            return
+                t_handle_client.start()
+
+            except:
+                return
 
     @staticmethod
-    def __connectToServer(server, serverRef, userColor):
-        mySocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        mySocket.settimeout(5)
+    def __connect_to_server(server_data: ServerModel):
+        my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        my_socket.settimeout(5)
 
         maxTries = 5
         retryInterval = 2
 
         for attempt in range(maxTries):
             try:
-                mySocket.connect((server["ip"], 2137))
+                my_socket.connect((server_data["ip"], 2137))
             except:
                 print(
                     f"Attempt {attempt + 1}/{maxTries}: Connection refused. Retrying in {retryInterval} seconds..."
@@ -180,163 +190,192 @@ class HeadlessApp:
             )
             return
 
-        mySocket.settimeout(None)
+        my_socket.settimeout(None)
 
-        messages = fetch_messages_from_server(serverRef)
-        print_messages(messages)
+        messages = message_store.fetch_messages_from_server(server_data["reference"])
+        message_store.print_messages(messages)
 
-        t_userInput = threading.Thread(
-            target=HeadlessApp.__userSendMessage, args=(mySocket, userColor)
+        t_user_input = threading.Thread(
+            target=HeadlessApp.__user_send_message, args=(my_socket,)
         )
-        t_readData = threading.Thread(
-            target=HeadlessApp.__userReadMessage, args=(mySocket, userColor)
+        t_read_data = threading.Thread(
+            target=HeadlessApp.__user_read_message, args=(my_socket,)
         )
 
-        t_userInput.start()
-        t_readData.start()
+        t_user_input.start()
+        t_read_data.start()
 
-        t_userInput.join()
-        t_readData.join()
+        t_user_input.join()
+        t_read_data.join()
 
     @staticmethod
-    def __userSendMessage(mySocket, userColor):
-        global userInput
-        userInput = ""
-        print(f"{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ", end="")
+    def __user_send_message(my_socket):
+        global user_input
+        user_input = ""
+
+        user_data = user_store.user_data
+        user_color = user_data["color"]
+
+        print(f"{CONSOLE_USER_COLORS[user_color.upper()]}[You]: ", end="")
         sys.stdout.flush()
 
-        try:
-            while True:
+        while True:
+            try:
                 if msvcrt.kbhit():
                     char = msvcrt.getch().decode()
 
                     if char == "\r" or char == "\n" or char == "\r\n":
-                        mySocket.send(userInput.encode())
+                        my_socket.send(user_input.encode())
                         print(
-                            f"\n{CONSOLE_USER_COLORS[userColor.upper()]}[You]: ", end=""
+                            f"\n{CONSOLE_USER_COLORS[user_color.upper()]}[You]: ",
+                            end="",
                         )
-                        userInput = ""
+                        user_input = ""
                     else:
-                        userInput += char
+                        user_input += char
 
                         print(char, end="")
                         sys.stdout.flush()
 
-                        if userInput.lower() == "exit":
+                        if user_input.lower() == "exit":
                             raise KeyboardInterrupt
 
-        except KeyboardInterrupt:
-            mySocket.close()
+            except KeyboardInterrupt:
+                my_socket.close()
+                return
 
-        except:
-            print("Failed to send the message. Connection to the server is broken")
-            return
+            except:
+                print("Failed to send the message. Connection to the server is broken")
+                return
 
     @staticmethod
-    def __userReadMessage(mySocket, userColor):
+    def __user_read_message(my_socket):
+        user_data = user_store.user_data
+        user_color = user_data["color"]
+
         while True:
             try:
-                if len(mySocket.recv(1, socket.MSG_PEEK)):
-                    incomingData = mySocket.recv(1024).decode()
+                if len(my_socket.recv(1, socket.MSG_PEEK)):
+                    incoming_data = my_socket.recv(1024).decode()
+
                     print(
-                        f"\r{CONSOLE_COLORS['RESET']}{incomingData}\n{CONSOLE_USER_COLORS[userColor.upper()]}[You]: {userInput}",
+                        f"\r{CONSOLE_COLORS['RESET']}{incoming_data}\n{CONSOLE_USER_COLORS[user_color.upper()]}[You]: {user_input}",
                         end="",
                     )
 
             except:
                 print(
                     "Failed to read a message from server. Connection to the server is broken",
-                    mySocket,
+                    my_socket,
                 )
                 return
 
     @staticmethod
-    def __serverInput(connectedClients, serverSocket, buffer, serverRef):
-        global serverInput
-        serverInput = ""
-        serverData = {"name": "server", "color": "server"}
+    def __server_input(
+        connected_clients: typing.List[dict],
+        server_socket,
+        buffer: MessageBuffer,
+        server_reference: firestore.DocumentReference,
+    ):
+        global server_input
+        server_input = ""
+
+        server_data = {"name": "server", "color": "server"}
 
         print(f"{CONSOLE_COLORS['SERVER']}[Server]: ", end="")
         sys.stdout.flush()
 
-        try:
-            while True:
+        while True:
+            try:
                 if msvcrt.kbhit():
                     char = msvcrt.getch().decode()
 
                     if char == "\r" or char == "\n" or char == "\r\n":
-                        if not serverInput.startswith("!"):
+                        if not server_input.startswith("!"):
                             buffer.push(
                                 {
-                                    "id": generateRandomId(),
-                                    "server": serverRef,
-                                    "user": serverRef,
-                                    "text": serverInput,
+                                    "id": help_functions.generate_random_id(),
+                                    "server": server_reference,
+                                    "user": server_reference,
+                                    "text": server_input,
                                     "time": datetime.now(),
                                     "isServer": True,
                                 }
                             )
 
-                        for client in connectedClients:
-                            for _, clientSocket in client.items():
-                                clientSocket.send(
-                                    HeadlessApp.__formatMessage(
-                                        serverInput, serverData
+                        for client in connected_clients:
+                            for _, client_socket in client.items():
+                                client_socket.send(
+                                    HeadlessApp.__format_message(
+                                        server_input, server_data
                                     ).encode()
                                 )
                         print(f"\n{CONSOLE_COLORS['SERVER']}[Server]: ", end="")
-                        serverInput = ""
+                        server_input = ""
                     else:
-                        serverInput += char
+                        server_input += char
 
                         print(char, end="")
                         sys.stdout.flush()
 
-                        if serverInput.lower() == "exit":
-                            raise
+                        if server_input.lower() == "exit":
+                            raise Exception
 
-        except:
-            print(f"{CONSOLE_COLORS['RESET']}\nShutting down server...")
+            except:
+                print(f"{CONSOLE_COLORS['RESET']}\nShutting down server...")
 
-        finally:
-            serverSocket.close()
+            server_socket.close()
 
     @staticmethod
-    def __handleClients(connectedClients, currClient, serverRef, buffer):
-        currClientIp, currClientSocket = currClient
-        currClientRef = findUser(currClientIp)
-        currClientData = currClientRef.get().to_dict()
+    def __handle_clients(
+        connected_clients: typing.List[dict],
+        current_client,
+        server_reference: firestore.DocumentReference,
+        buffer: MessageBuffer,
+    ):
+        current_client_ip, current_client_socket = current_client
+        current_client_reference = user_store.find_user(current_client_ip)
+        current_client_data = current_client_reference.get().to_dict()
 
         while True:
             try:
-                if len(currClientSocket.recv(1, socket.MSG_PEEK)):
-                    incomingData = currClientSocket.recv(1024).decode()
-                    formattedMessage = HeadlessApp.__formatMessage(
-                        incomingData, currClientData
+                if len(current_client_socket.recv(1, socket.MSG_PEEK)):
+                    incoming_data = current_client_socket.recv(1024).decode()
+                    formatted_message = HeadlessApp.__format_message(
+                        incoming_data, current_client_data
                     )
+
                     print(
-                        f"\r{CONSOLE_COLORS['RESET']}{formattedMessage}\n{CONSOLE_COLORS['SERVER']}[Server]: {serverInput}",
+                        f"\r{CONSOLE_COLORS['RESET']}{formatted_message}\n{CONSOLE_COLORS['SERVER']}[Server]: {server_input}",
                         end="",
                     )
+
                     buffer.push(
                         {
-                            "id": generateRandomId(),
-                            "server": serverRef,
-                            "user": currClientRef,
-                            "text": incomingData,
+                            "id": help_functions.generate_random_id(),
+                            "server": server_reference,
+                            "user": current_client_reference,
+                            "text": incoming_data,
                             "time": datetime.now(),
                             "isServer": False,
                         }
                     )
 
-                    for client in connectedClients:
-                        for clientIp, clientSocket in client.items():
-                            if clientIp != currClientIp:
-                                clientSocket.send(formattedMessage.encode())
+                    for client in connected_clients:
+                        for client_ip, client_socket in client.items():
+                            if client_ip != current_client_ip:
+                                client_socket.send(formatted_message.encode())
             except:
                 return
 
     @staticmethod
-    def __formatMessage(messageText, userData):
-        serverTimestamp = datetime.now()
-        return f"[{mapTimestamp(serverTimestamp)}] {CONSOLE_USER_COLORS[userData['color'].upper()]}[{userData['name']}]: {messageText}{CONSOLE_COLORS['RESET']}"
+    def __format_message(message_text: str, user_data: UserModel) -> str:
+        server_timestamp = datetime.now()
+
+        formatted_message = f"[{HeadlessApp.__map_timestamp(server_timestamp)}] {CONSOLE_USER_COLORS[user_data['color'].upper()]}[{user_data['name']}]: {message_text}{CONSOLE_COLORS['RESET']}"
+
+        return formatted_message
+
+    @staticmethod
+    def __map_timestamp(date) -> str:
+        return date.strftime("%d.%m.%y %H:%M")

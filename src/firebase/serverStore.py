@@ -27,19 +27,10 @@ class ServerStore(Store):
         t1.join()
 
     @staticmethod
-    def create_server(server_data: ServerModel):
-        t1 = threading.Thread(
-            target=Store._loading, args=("Creating a server, please wait",)
-        )
-        t2 = threading.Thread(
-            target=ServerStore.__create_server_in_database, args=(server_data,)
-        )
+    def create_server(server_data: ServerModel) -> firestore.DocumentReference:
+        server_ref = ServerStore.collection.add(server_data.to_map())
 
-        t2.start()
-        t1.start()
-
-        t2.join()
-        t1.join()
+        return server_ref
 
     @staticmethod
     def is_server_in_database(server_ip: str) -> bool:
@@ -90,6 +81,18 @@ class ServerStore(Store):
         server_data["reference"].update({"users": server_data["users"]})
 
     @staticmethod
+    def create_server_name():
+        try:
+            server_name = input("Enter server's name:\n")
+            while not ServerStore.is_server_name_unique(server_name):
+                print("This name already exists. Server name has to be unique!")
+                server_name = input("Enter server's name:\n")
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+
+        return server_name
+
+    @staticmethod
     def open_server(server_ref: firestore.DocumentReference):
         server_ref.update({"isActive": True})
 
@@ -108,15 +111,3 @@ class ServerStore(Store):
             ServerStore.servers.append(ServerModel(doc.to_dict(), doc.reference))
 
         Store.is_database_busy.clear()
-
-    @staticmethod
-    def __create_server_in_database(
-        server_data: ServerModel,
-    ) -> typing.Optional[firestore.DocumentReference]:
-        Store.is_database_busy.set()
-
-        server_ref = ServerStore.collection.add(server_data.to_map())
-
-        Store.is_database_busy.clear()
-
-        return server_ref

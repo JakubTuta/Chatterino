@@ -7,7 +7,7 @@ from .headless import HeadlessApp
 
 def main():
     user_ip = help_functions.get_user_info()
-    user_data = user_store.fetch_user(user_ip)
+    user_store.get_user_data(user_ip)
 
     try:
         mode = help_functions.check_program_mode()
@@ -16,10 +16,10 @@ def main():
         return
 
     if mode == "headless":
-        HeadlessApp.run(side, user_data)
+        HeadlessApp.run(side)
 
     elif mode == "gui":
-        GuiApp.run(side, user_data)
+        GuiApp.run(side)
 
 
 if __name__ == "__main__":

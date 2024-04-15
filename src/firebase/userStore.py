@@ -17,6 +17,8 @@ class UserStore(Store):
     is_database_hold.clear()
     collection = firestore_client.collection("servers")
 
+    user_data: UserModel
+
     @staticmethod
     def fetch_users(user_ip: str) -> list:
         users = []
@@ -35,6 +37,15 @@ class UserStore(Store):
         t1.join()
 
         return users
+
+    @staticmethod
+    def get_user_data(user_ip: str) -> typing.Optional[UserModel]:
+        query = UserStore.collection.where("ip", "==", user_ip)
+        docs = query.stream()
+
+        user = UserModel(docs[0].to_dict(), docs[0].reference)
+
+        UserStore.user_data = user
 
     @staticmethod
     def find_user(user_ip: str) -> typing.Optional[UserModel]:
