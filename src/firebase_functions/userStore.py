@@ -4,8 +4,8 @@ import typing
 
 from google.cloud import firestore
 
+import help.functions as help_functions
 from help.colors import CONSOLE_COLORS
-from help.functions import tryUserColor
 from models.userModel import UserModel
 
 from .firebase_init import firestore_client
@@ -15,8 +15,8 @@ from .store import Store
 class UserStore(Store):
     is_database_hold = threading.Event()
     is_database_hold.clear()
-    collection = firestore_client.collection("servers")
 
+    collection = firestore_client.collection("servers")
     user_data: UserModel
 
     @staticmethod
@@ -41,7 +41,7 @@ class UserStore(Store):
     @staticmethod
     def get_user_data(user_ip: str) -> typing.Optional[UserModel]:
         query = UserStore.collection.where("ip", "==", user_ip)
-        docs = query.stream()
+        docs = list(query.stream())
 
         user = UserModel(docs[0].to_dict(), docs[0].reference)
 
@@ -50,7 +50,7 @@ class UserStore(Store):
     @staticmethod
     def find_user(user_ip: str) -> typing.Optional[UserModel]:
         query = UserStore.collection.where("ip", "==", user_ip)
-        docs = query.stream()
+        docs = list(query.stream())
 
         user = UserModel(docs[0].to_dict(), docs[0].reference)
 
@@ -111,7 +111,7 @@ class UserStore(Store):
     @staticmethod
     def __prepare_new_user(user_ip: str) -> dict:
         name = input("Enter your username: ")
-        return {"name": name, "ip": user_ip, "color": tryUserColor()}
+        return {"name": name, "ip": user_ip, "color": help_functions.try_user_color()}
 
     @staticmethod
     def __create_user(user_data: dict) -> firestore.DocumentReference:

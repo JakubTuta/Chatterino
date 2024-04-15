@@ -1,13 +1,13 @@
-import firebase.userStore as user_store
 import help.functions as help_functions
+from firebase_functions.userStore import UserStore
 
-from .gui import GuiApp
-from .headless import HeadlessApp
+# from gui import GuiApp
+from headless import HeadlessApp
 
 
 def main():
     user_ip = help_functions.get_user_info()
-    user_store.get_user_data(user_ip)
+    UserStore.get_user_data(user_ip)
 
     try:
         mode = help_functions.check_program_mode()
@@ -18,8 +18,8 @@ def main():
     if mode == "headless":
         HeadlessApp.run(side)
 
-    elif mode == "gui":
-        GuiApp.run(side)
+    # elif mode == "gui":
+    #     GuiApp.run(side)
 
 
 if __name__ == "__main__":

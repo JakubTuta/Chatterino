@@ -8,9 +8,9 @@ from datetime import datetime
 
 from google.cloud import firestore
 
-import firebase.messagesStore as message_store
-import firebase.serverStore as server_store
-import firebase.userStore as user_store
+import firebase_functions.messagesStore as message_store
+import firebase_functions.serverStore as server_store
+import firebase_functions.userStore as user_store
 import help.functions as help_functions
 from help.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 from help.messageBuffer import MessageBuffer

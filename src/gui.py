@@ -6,8 +6,8 @@ from datetime import datetime
 import customtkinter as ctk
 from google.cloud import firestore
 
-from firebase.messagesStore import fetch_messages_from_server
-from firebase.serverStore import (
+from firebase_functions.messagesStore import fetch_messages_from_server
+from firebase_functions.serverStore import (
     addUserToServer,
     closeServer,
     createServer,
@@ -18,7 +18,7 @@ from firebase.serverStore import (
     openServer,
     serverExistsInDatabase,
 )
-from firebase.userStore import findUser
+from firebase_functions.userStore import findUser
 
 from .help.colors import HEX_COLORS
 from .help.functions import generateRandomId
