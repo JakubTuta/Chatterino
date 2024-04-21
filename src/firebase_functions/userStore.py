@@ -3,6 +3,7 @@ import time
 import typing
 
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 import help.functions as help_functions
 from help.colors import CONSOLE_COLORS
@@ -20,7 +21,7 @@ class UserStore(Store):
     user_data: UserModel
 
     @staticmethod
-    def fetch_users(user_ip: str) -> list:
+    def fetch_user(user_ip: str) -> UserModel:
         users = []
 
         t1 = threading.Thread(
@@ -36,25 +37,22 @@ class UserStore(Store):
         t2.join()
         t1.join()
 
-        return users
+        UserStore.user_data = users[0]
 
-    @staticmethod
-    def get_user_data(user_ip: str) -> typing.Optional[UserModel]:
-        query = UserStore.collection.where("ip", "==", user_ip)
-        docs = list(query.stream())
-
-        user = UserModel(docs[0].to_dict(), docs[0].reference)
-
-        UserStore.user_data = user
+        return users[0]
 
     @staticmethod
     def find_user(user_ip: str) -> typing.Optional[UserModel]:
-        query = UserStore.collection.where("ip", "==", user_ip)
+        query = UserStore.collection.where(filter=FieldFilter("ip", "==", user_ip))
         docs = list(query.stream())
 
-        user = UserModel(docs[0].to_dict(), docs[0].reference)
+        try:
+            user = UserModel(docs[0].to_dict(), docs[0].reference)
 
-        return user
+            return user
+
+        except IndexError:
+            return None
 
     def _loading(text: str):
         phrases = [
@@ -79,7 +77,7 @@ class UserStore(Store):
                 time.sleep(0.5)
 
             if not UserStore.is_database_hold.is_set():
-                print(" " * len(phrases[-1]), end="\r")
+                print(" " * len(phrases[-1]) * 2, end="\r")
 
     @staticmethod
     def __find_or_create_user(users: list, user_ip: str):
@@ -96,17 +94,16 @@ class UserStore(Store):
 
             UserStore.is_database_hold.clear()
 
-        users.append(user_ref)
-        users.append(user_data)
+        users.append(UserModel(user_data, user_ref))
 
         Store.is_database_busy.clear()
 
     @staticmethod
     def __does_user_exist(user_ip: str) -> bool:
-        query = UserStore.collection.where("ip", "==", user_ip)
+        query = UserStore.collection.where(filter=FieldFilter("ip", "==", user_ip))
         docs = query.stream()
 
-        return len(docs) > 0
+        return len(list(docs)) > 0
 
     @staticmethod
     def __prepare_new_user(user_ip: str) -> dict:

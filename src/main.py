@@ -7,7 +7,7 @@ from headless import HeadlessApp
 
 def main():
     user_ip = help_functions.get_user_info()
-    UserStore.get_user_data(user_ip)
+    UserStore.fetch_user(user_ip)
 
     try:
         mode = help_functions.check_program_mode()
