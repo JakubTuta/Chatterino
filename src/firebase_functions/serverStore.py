@@ -35,7 +35,7 @@ class ServerStore(Store):
     @staticmethod
     def is_server_in_database(server_ip: str) -> bool:
         for server in ServerStore.servers:
-            if server["ip"] == server_ip:
+            if server.ip == server_ip:
                 return True
 
         return False
@@ -54,12 +54,12 @@ class ServerStore(Store):
     ) -> typing.Optional[ServerModel]:
         if server_name:
             for server in ServerStore.servers:
-                if server["name"] == server_name:
+                if server.name == server_name:
                     return server
 
         elif server_ip:
             for server in ServerStore.servers:
-                if server["name"] == server_name:
+                if server.ip == server_ip:
                     return server
 
     @staticmethod

@@ -83,18 +83,19 @@ class UserStore(Store):
     def __find_or_create_user(users: list, user_ip: str):
         Store.is_database_busy.set()
 
-        if UserStore.__does_user_exist(user_ip):
-            user_ref = UserStore.find_user(user_ip)
-            user_data = user_ref.get().to_dict()
-        else:
+        user = UserStore.find_user(user_ip)
+
+        if not user:
             UserStore.is_database_hold.set()
 
             user_data = UserStore.__prepare_new_user(user_ip)
             user_ref = UserStore.__create_user(user_data)
 
+            user = UserModel(user_data, user_ref)
+
             UserStore.is_database_hold.clear()
 
-        users.append(UserModel(user_data, user_ref))
+        users.append(user)
 
         Store.is_database_busy.clear()
 

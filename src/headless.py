@@ -8,10 +8,10 @@ from datetime import datetime
 
 from google.cloud import firestore
 
-import firebase_functions.messagesStore as message_store
-import firebase_functions.serverStore as server_store
-import firebase_functions.userStore as user_store
 import help.functions as help_functions
+from firebase_functions.messagesStore import MessagesStore
+from firebase_functions.serverStore import ServerStore
+from firebase_functions.userStore import UserStore
 from help.colors import CONSOLE_COLORS, CONSOLE_USER_COLORS
 from help.messageBuffer import MessageBuffer
 from models.serverModel import ServerModel
@@ -25,34 +25,37 @@ class HeadlessApp:
 
     @staticmethod
     def run(side: str):
-        server_store.fetch_servers()
+        ServerStore.fetch_servers()
 
         if side == "join":
             HeadlessApp.join_server()
 
         elif side == "host":
-            if not server_store.is_server_in_database():
+            if not ServerStore.is_server_in_database(UserStore.user_data.ip):
                 server_data = HeadlessApp.create_server()
 
                 if not server_data:
                     return
 
+            else:
+                server_data = ServerStore.find_server(server_ip=UserStore.user_data.ip)
+
             HeadlessApp.host_server(server_data)
 
-            server_store.close_server(server_data["reference"])
+            ServerStore.close_server(server_data.reference)
             print("Server shut down")
 
     @staticmethod
     def join_server():
         online_servers = [
-            server for server in server_store.servers if server["isActive"]
+            server for server in ServerStore.servers if server["isActive"]
         ]
 
         if len(online_servers) == 0:
             print("There are no online servers")
             return
 
-        server_names = [server["name"] for server in server_store.servers]
+        server_names = [server["name"] for server in ServerStore.servers]
         print("Currently online servers:\n")
         for index, server_name in enumerate(server_names):
             print(f"{index + 1}: {server_name}")
@@ -62,7 +65,7 @@ class HeadlessApp:
             user_input = input("Incorrect server name. Try again:\n")
         print()
 
-        server = server_store.find_server(server_name=user_input)
+        server = ServerStore.find_server(server_name=user_input)
 
         if server["isPassword"]:
             try:
@@ -72,16 +75,15 @@ class HeadlessApp:
 
             print("Correct password!\n")
 
-        user_data = user_store.user_data
-        if not server_store.is_user_on_server(server, user_data["reference"]):
-            server_store.add_user_to_server(server, user_data["reference"])
+        if not ServerStore.is_user_on_server(server, UserStore.user_data.reference):
+            ServerStore.add_user_to_server(server, UserStore.user_data.reference)
 
         HeadlessApp.__connect_to_server(server)
 
     @staticmethod
     def create_server() -> typing.Optional[ServerModel]:
         try:
-            server_name = server_store.create_server_name()
+            server_name = ServerStore.create_server_name()
 
             is_password_protected = input(
                 "Do you want your server password protected? [yes \ no]\n",
@@ -97,18 +99,16 @@ class HeadlessApp:
         except KeyboardInterrupt:
             return
 
-        user_data = user_store.user_data
-
         server_data = {
             "name": server_name,
-            "ip": user_data["ip"],
+            "ip": UserStore.user_data.ip,
             "isPassword": is_password_protected,
             "password": password,
             "isActive": True,
             "users": [],
         }
 
-        server_reference = server_store.create_server(server_data)
+        server_reference = ServerStore.create_server(server_data)
         server_model = ServerModel(server_data, server_reference)
 
         print("Server created!")
@@ -120,7 +120,7 @@ class HeadlessApp:
         print("Creating server socket")
 
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((server_data["ip"], 2137))
+        server_socket.bind((server_data.ip, 2137))
         server_socket.listen(5)
 
         connected_clients = []
@@ -128,16 +128,16 @@ class HeadlessApp:
 
         print("Server socket is created")
 
-        server_store.open_server(server_data["reference"])
+        ServerStore.open_server(server_data.reference)
 
         print("Waiting for users", end="\n\n")
 
-        messages = message_store.fetch_messages_from_server(server_data["reference"])
-        message_store.print_messages(messages)
+        messages = MessagesStore.fetch_messages_from_server(server_data.reference)
+        MessagesStore.print_messages(messages)
 
         t_server_input = threading.Thread(
             target=HeadlessApp.__server_input,
-            args=(connected_clients, server_socket, buffer, server_data["reference"]),
+            args=(connected_clients, server_socket, buffer, server_data.reference),
         )
         t_server_input.start()
 
@@ -157,7 +157,7 @@ class HeadlessApp:
                     args=(
                         connected_clients,
                         [client_ip, client_socket],
-                        server_data["reference"],
+                        server_data.reference,
                         buffer,
                     ),
                 )
@@ -176,7 +176,7 @@ class HeadlessApp:
 
         for attempt in range(maxTries):
             try:
-                my_socket.connect((server_data["ip"], 2137))
+                my_socket.connect((server_data.ip, 2137))
             except:
                 print(
                     f"Attempt {attempt + 1}/{maxTries}: Connection refused. Retrying in {retryInterval} seconds..."
@@ -192,8 +192,8 @@ class HeadlessApp:
 
         my_socket.settimeout(None)
 
-        messages = message_store.fetch_messages_from_server(server_data["reference"])
-        message_store.print_messages(messages)
+        messages = MessagesStore.fetch_messages_from_server(server_data.reference)
+        MessagesStore.print_messages(messages)
 
         t_user_input = threading.Thread(
             target=HeadlessApp.__user_send_message, args=(my_socket,)
@@ -213,8 +213,7 @@ class HeadlessApp:
         global user_input
         user_input = ""
 
-        user_data = user_store.user_data
-        user_color = user_data["color"]
+        user_color = UserStore.user_data.color
 
         print(f"{CONSOLE_USER_COLORS[user_color.upper()]}[You]: ", end="")
         sys.stdout.flush()
@@ -250,8 +249,7 @@ class HeadlessApp:
 
     @staticmethod
     def __user_read_message(my_socket):
-        user_data = user_store.user_data
-        user_color = user_data["color"]
+        user_color = UserStore.user_data.color
 
         while True:
             try:
@@ -334,7 +332,7 @@ class HeadlessApp:
         buffer: MessageBuffer,
     ):
         current_client_ip, current_client_socket = current_client
-        current_client_reference = user_store.find_user(current_client_ip)
+        current_client_reference = UserStore.find_user(current_client_ip)
         current_client_data = current_client_reference.get().to_dict()
 
         while True:
@@ -372,7 +370,7 @@ class HeadlessApp:
     def __format_message(message_text: str, user_data: UserModel) -> str:
         server_timestamp = datetime.now()
 
-        formatted_message = f"[{HeadlessApp.__map_timestamp(server_timestamp)}] {CONSOLE_USER_COLORS[user_data['color'].upper()]}[{user_data['name']}]: {message_text}{CONSOLE_COLORS['RESET']}"
+        formatted_message = f"[{HeadlessApp.__map_timestamp(server_timestamp)}] {CONSOLE_USER_COLORS[user_data.color.upper()]}[{user_data.name}]: {message_text}{CONSOLE_COLORS['RESET']}"
 
         return formatted_message
 
